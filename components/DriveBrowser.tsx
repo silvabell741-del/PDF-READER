@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { listPdfFiles } from '../services/driveService';
 import { DriveFile } from '../types';
-import { FileText, Loader2, Search, LayoutGrid, List as ListIcon } from 'lucide-react';
+import { FileText, Loader2, Search, LayoutGrid, List as ListIcon, AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface Props {
   accessToken: string;
   onSelectFile: (file: DriveFile) => void;
   onLogout: () => void;
+  onAuthError: () => void; // Callback para quando o token expirar
 }
 
-export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile }) => {
+export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAuthError }) => {
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [filteredFiles, setFilteredFiles] = useState<DriveFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,6 +20,9 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile }) => 
 
   useEffect(() => {
     let mounted = true;
+    setLoading(true);
+    setError(null);
+    
     listPdfFiles(accessToken)
       .then(data => {
         if (mounted) {
@@ -27,18 +31,43 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile }) => 
         }
       })
       .catch(err => {
-        if (mounted) setError(err.message);
+        if (mounted) {
+          console.error(err);
+          if (err.message === "Unauthorized" || err.message.includes("401")) {
+            onAuthError(); // Avisa o App que o token expirou
+          } else {
+            setError(err.message);
+          }
+        }
       })
       .finally(() => {
         if (mounted) setLoading(false);
       });
     return () => { mounted = false; };
-  }, [accessToken]);
+  }, [accessToken, onAuthError]);
 
   useEffect(() => {
     const results = files.filter(f => f.name.toLowerCase().includes(search.toLowerCase()));
     setFilteredFiles(results);
   }, [search, files]);
+
+  if (error) {
+    return (
+      <div className="flex flex-col h-full bg-bg text-text p-10 items-center justify-center text-center">
+        <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-red-500 mb-4">
+          <AlertTriangle size={32} />
+        </div>
+        <h3 className="text-xl font-semibold mb-2">Erro ao carregar arquivos</h3>
+        <p className="text-text-sec mb-6 max-w-md">{error}</p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="px-6 py-2 bg-surface border border-border rounded-full hover:bg-white/5 transition"
+        >
+          Tentar Novamente
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-bg text-text p-6 md:p-10 overflow-hidden">
@@ -82,12 +111,6 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile }) => 
         <div className="flex flex-1 items-center justify-center flex-col gap-3">
           <Loader2 className="animate-spin h-8 w-8 text-brand" />
           <span className="text-text-sec text-sm">Carregando do Google Drive...</span>
-        </div>
-      )}
-
-      {error && (
-        <div className="p-4 bg-red-900/20 border border-red-500/50 rounded-2xl text-red-200 text-center">
-          {error}
         </div>
       )}
 

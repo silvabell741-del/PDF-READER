@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
+import { GlobalWorkerOptions, getDocument, PDFDocumentProxy } from 'pdfjs-dist';
 import { Annotation } from '../types';
 import { saveAnnotation, loadAnnotations } from '../services/storageService';
 import { downloadDriveFile } from '../services/driveService';
-import { ArrowLeft, Highlighter, Loader2, Settings, X, Type, List, MousePointer2, Trash2, MapPin } from 'lucide-react';
+import { ArrowLeft, Highlighter, Loader2, Settings, X, Type, List, MousePointer2 } from 'lucide-react';
 
-// Explicitly set worker to specific version to avoid mismatches
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.worker.min.mjs`;
+// Explicitly set worker to specific version to match package.json (4.0.379)
+GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs`;
 
 interface Props {
   accessToken?: string | null;
@@ -27,7 +27,7 @@ interface SelectionState {
 
 // --- Sub-Component: Individual Page Renderer ---
 interface PdfPageProps {
-  pdfDoc: pdfjsLib.PDFDocumentProxy;
+  pdfDoc: PDFDocumentProxy;
   pageNumber: number;
   scale: number;
   filterValues: string;
@@ -82,23 +82,18 @@ const PdfPage: React.FC<PdfPageProps> = ({
           textLayerDiv.style.height = `${viewport.height}px`;
           textLayerDiv.style.setProperty('--scale-factor', `${scale}`);
 
-          const lib = pdfjsLib as any;
-          const TextLayerClass = lib.TextLayer || lib.pdfjsLib?.TextLayer;
-          
-          if (TextLayerClass) {
-             const textLayer = new TextLayerClass({
-              textContentSource: textContent,
-              container: textLayerDiv,
-              viewport: viewport,
-            });
-            await textLayer.render();
-          } else {
-             await lib.renderTextLayer({
-              textContentSource: textContent,
-              container: textLayerDiv,
-              viewport: viewport,
-              textDivs: []
-            }).promise;
+          try {
+            const pdfjs = await import('pdfjs-dist');
+            if (pdfjs.renderTextLayer) {
+              await pdfjs.renderTextLayer({
+                textContentSource: textContent,
+                container: textLayerDiv,
+                viewport: viewport,
+                textDivs: []
+              }).promise;
+            }
+          } catch (e) {
+            console.warn("Text layer rendering failed", e);
           }
 
           if (active) setRendered(true);
@@ -217,7 +212,7 @@ const PdfPage: React.FC<PdfPageProps> = ({
 export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, uid, onBack, fileBlob }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   
-  const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -254,7 +249,7 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, uid,
         }
 
         const arrayBuffer = await blob.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pdf = await getDocument({ data: arrayBuffer }).promise;
         
         if (mounted) {
           setPdfDoc(pdf);
@@ -264,7 +259,8 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, uid,
         }
       } catch (err) {
         console.error("Error loading PDF:", err);
-        alert("Falha ao carregar PDF. Verifique o console.");
+        // More descriptive error for users
+        alert(`Falha ao carregar PDF. Verifique se o arquivo é válido. (Erro: ${err instanceof Error ? err.message : String(err)})`);
       } finally {
         if (mounted) setLoading(false);
       }

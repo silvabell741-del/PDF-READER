@@ -9,11 +9,16 @@ import { ThemeSwitcher } from './components/ThemeSwitcher';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { AppState, DriveFile } from './types';
-import { ShieldCheck, Upload, LogIn } from 'lucide-react';
+import { ShieldCheck, Upload, LogIn, RefreshCw, AlertCircle } from 'lucide-react';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  
+  // Initialize access token from sessionStorage to persist across refreshes
+  const [accessToken, setAccessToken] = useState<string | null>(() => {
+    return sessionStorage.getItem('drive_access_token');
+  });
+  
   const [loadingAuth, setLoadingAuth] = useState(true);
   
   // Navigation State
@@ -29,6 +34,7 @@ export default function App() {
       setUser(currentUser);
       if (!currentUser) {
         setAccessToken(null);
+        sessionStorage.removeItem('drive_access_token');
         setSelectedFile(null);
         setCurrentView('dashboard'); // Redirect to dashboard (which handles guest view)
       }
@@ -49,6 +55,8 @@ export default function App() {
     try {
       const result = await signInWithGoogleDrive();
       setAccessToken(result.accessToken);
+      // Persist token
+      sessionStorage.setItem('drive_access_token', result.accessToken);
     } catch (e) {
       alert("Falha no login. Veja o console.");
     }
@@ -56,9 +64,17 @@ export default function App() {
 
   const handleLogout = async () => {
     await logout();
+    setAccessToken(null);
+    sessionStorage.removeItem('drive_access_token');
     setLocalFile(null);
     setSelectedFile(null);
     setCurrentView('dashboard');
+  };
+
+  // Called when Drive API returns 401 (Unauthorized)
+  const handleAuthError = () => {
+    setAccessToken(null);
+    sessionStorage.removeItem('drive_access_token');
   };
 
   const handleOpenFile = (file: DriveFile) => {
@@ -130,9 +146,9 @@ export default function App() {
         />
         
         <main className="flex-1 relative overflow-hidden flex flex-col">
-          {!user && currentView === 'browser' ? (
-            // Guest User trying to access Drive Browser
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-text">
+          {/* Guest User trying to access Drive Browser */}
+          {!user && currentView === 'browser' && (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-text animate-in fade-in zoom-in duration-300">
                <div className="w-16 h-16 bg-surface border border-border rounded-2xl flex items-center justify-center mb-6">
                   <ShieldCheck size={32} className="text-text-sec" />
                </div>
@@ -146,26 +162,43 @@ export default function App() {
                   Entrar com Google
                 </button>
             </div>
-          ) : (
-            // Authenticated Views (Dashboard or Browser)
-            <>
-              {currentView === 'dashboard' && (
-                <Dashboard 
-                  userName={user?.displayName}
-                  onOpenFile={handleOpenFile}
-                  onUploadLocal={handleLocalUpload}
-                  onChangeView={(v) => setCurrentView(v)}
-                />
-              )}
+          )}
 
-              {currentView === 'browser' && accessToken && (
-                <DriveBrowser 
-                  accessToken={accessToken}
-                  onSelectFile={handleOpenFile}
-                  onLogout={handleLogout}
-                />
-              )}
-            </>
+          {/* Logged in User but Token Expired/Missing for Drive Browser */}
+          {user && currentView === 'browser' && !accessToken && (
+             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-text animate-in fade-in zoom-in duration-300">
+                <div className="w-16 h-16 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl flex items-center justify-center mb-6 text-yellow-500">
+                  <AlertCircle size={32} />
+                </div>
+                <h2 className="text-2xl font-bold mb-2">Sessão do Drive Expirou</h2>
+                <p className="text-text-sec mb-6 max-w-sm">Sua conexão de segurança com o Google Drive precisa ser renovada para listar os arquivos.</p>
+                <button 
+                  onClick={handleLogin}
+                  className="flex items-center gap-2 py-3 px-6 bg-brand text-bg rounded-full hover:brightness-110 transition-colors font-medium shadow-lg shadow-brand/20 btn-primary"
+                >
+                  <RefreshCw size={18} />
+                  Reconectar Drive
+                </button>
+             </div>
+          )}
+
+          {/* Valid Views */}
+          {currentView === 'dashboard' && (
+            <Dashboard 
+              userName={user?.displayName}
+              onOpenFile={handleOpenFile}
+              onUploadLocal={handleLocalUpload}
+              onChangeView={(v) => setCurrentView(v)}
+            />
+          )}
+
+          {currentView === 'browser' && user && accessToken && (
+            <DriveBrowser 
+              accessToken={accessToken}
+              onSelectFile={handleOpenFile}
+              onLogout={handleLogout}
+              onAuthError={handleAuthError}
+            />
           )}
         </main>
       </div>
@@ -179,8 +212,7 @@ export default function App() {
         {mainContent}
       </div>
       
-      {/* Persistent Components: These stay mounted regardless of mainContent changes */}
-      {/* Hidden input for global upload access */}
+      {/* Persistent Components */}
       <input 
         type="file" 
         id="local-upload-hidden"
