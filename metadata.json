@@ -1,0 +1,5 @@
+{
+  "name": "Anotador de PDF Drive",
+  "description": "Um PWA serverless para visualizar PDFs do Google Drive, fazer anotações e sincronizar com Firestore.",
+  "requestFramePermissions": []
+}

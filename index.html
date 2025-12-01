@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Anotador de PDF Drive</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: 'var(--brand)',
+              bg: 'var(--bg-main)',
+              surface: 'var(--bg-surface)',
+              sidebar: 'var(--bg-sidebar)',
+              text: 'var(--text-main)',
+              'text-sec:': 'var(--text-sec)',
+              border: 'var(--border-color)',
+            }
+          }
+        }
+      }
+    </script>
+    <!-- PDF.js Worker style fix for some environments -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/web/pdf_viewer.css">
+    <!-- Google Fonts for PDF Compatibility (Tinos=Times, Arimo=Arial) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Arimo:ital,wght@0,400;0,700;1,400;1,700&family=Tinos:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+    
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/",
+    "idb": "https://aistudiocdn.com/idb@^8.0.3",
+    "pdfjs-dist": "https://aistudiocdn.com/pdfjs-dist@^5.4.449"
+  }
+}
+</script>
+<style>
+  /* --- THEME VARIABLES --- */
+  :root {
+    /* Padrão: Midnight (Meia-noite) */
+    --bg-main: #09090b;
+    --bg-surface: #09090b;
+    --bg-sidebar: #000000;
+    --text-main: #fafafa;
+    --text-sec: #a1a1aa;
+    --brand: #ffffff;
+    --border-color: #27272a;
+    --accent-glow: rgba(255, 255, 255, 0.1);
+  }
+
+  /* 1. Slate (Antigo Padrão) */
+  .slate {
+    --bg-main: #0f172a;
+    --bg-surface: #1e293b;
+    --bg-sidebar: #1e293b;
+    --text-main: #f1f5f9;
+    --text-sec: #94a3b8;
+    --brand: #6366f1;
+    --border-color: #334155;
+    --accent-glow: rgba(99, 102, 241, 0.2);
+  }
+
+  /* 2. Alto Contraste */
+  .high-contrast {
+    --bg-main: #000000;
+    --bg-surface: #000000;
+    --bg-sidebar: #000000;
+    --text-main: #ffffff;
+    --text-sec: #ffff00;
+    --brand: #ffff00; /* Botões amarelos */
+    --border-color: #ffffff;
+  }
+  .high-contrast .btn-primary {
+    background-color: #ffff00 !important;
+    color: #000000 !important;
+    font-weight: bold;
+  }
+
+  /* 3. MN (Dark Moderno) */
+  .mn {
+    --bg-main: #1a1a1a;
+    --bg-surface: #2c2c2c;
+    --bg-sidebar: #212121;
+    --text-main: #f0f0f0;
+    --text-sec: #a0a0a0;
+    --brand: #48bb78; /* Verde menta */
+    --border-color: #404040;
+  }
+
+  /* 4. Soberania Esmeralda */
+  .emerald-sovereignty {
+    --bg-main: #020403; /* Fundo base */
+    --bg-surface: #064E3B; /* Verde profundo */
+    --bg-sidebar: #064E3B;
+    --text-main: #ecfdf5;
+    --text-sec: #6ee7b7;
+    --brand: #34D399;
+    --border-color: #D4AF37; /* Dourado */
+  }
+  /* Gradiente especial para o fundo no body */
+  .emerald-sovereignty body {
+    background: radial-gradient(circle at center, #064E3B 0%, #020403 100%) !important;
+    background-attachment: fixed !important;
+  }
+
+  /* 5. Aurora Galática */
+  .galactic-aurora {
+    --bg-main: #0F1014;
+    --bg-surface: #181920;
+    --bg-sidebar: #131419;
+    --text-main: #ffffff;
+    --text-sec: #4CC9F0;
+    --brand: #4CC9F0; /* Ciano Cyber */
+    --border-color: #2E2F3E;
+  }
+  .galactic-aurora .btn-primary {
+    background: linear-gradient(90deg, #D90429, #0055FF) !important;
+    border: none;
+  }
+
+  /* 6. Ano do Dragão */
+  .dragon-year {
+    --bg-main: #f3e5ca; /* Bege Pergaminho */
+    --bg-surface: #FFF8E7;
+    --bg-sidebar: #5D0E0E; /* Vermelho Profundo */
+    --text-main: #3E2723; /* Marrom Café */
+    --text-sec: #5D4037;
+    --brand: #B71C1C;
+    --border-color: #D4AF37; /* Dourado */
+  }
+  /* Ajustes específicos para sidebar neste tema (texto claro na sidebar escura) */
+  .dragon-year .sidebar-text {
+    color: #FFD700 !important;
+  }
+
+  /* 7. Maré do Amanhecer */
+  .morning-tide {
+    --bg-main: #F7F9FB;
+    --bg-surface: #FFFFFF;
+    --bg-sidebar: #23527A; /* Azul Oceano */
+    --text-main: #1e3a5f;
+    --text-sec: #5A7A9A;
+    --brand: #FF8F7A; /* Coral */
+    --border-color: #AFCBEF;
+  }
+  .morning-tide .sidebar-text {
+    color: #ffffff !important;
+  }
+
+  /* 8. Akebono (Japanese Dawn) */
+  .akebono-dawn {
+    --bg-main: #FFF5F7;
+    --bg-surface: #ffffff;
+    --bg-sidebar: linear-gradient(180deg, #E0F7FA 0%, #FCE4EC 50%, #DCEDC8 100%);
+    --text-main: #5D4037;
+    --text-sec: #880E4F;
+    --brand: #29B6F6;
+    --border-color: #F8BBD0;
+  }
+
+  /* 9. Itoshi Sae (Domínio Numérico) */
+  .itoshi-sae {
+    --bg-main: #080808;
+    --bg-surface: #121212;
+    --bg-sidebar: #050505;
+    --text-main: #e0e0e0;
+    --text-sec: #4fd1c5;
+    --brand: #4fd1c5; /* Teal */
+    --border-color: #4fd1c5;
+  }
+  .itoshi-sae .btn-primary {
+    background: linear-gradient(to right, #620000, #4a0000) !important;
+    color: white !important;
+  }
+
+  /* 10. Sorcerer Supreme */
+  .sorcerer-supreme {
+    --bg-main: #020617;
+    --bg-surface: rgba(15, 23, 42, 0.7);
+    --bg-sidebar: #020617;
+    --text-main: #f8fafc;
+    --text-sec: #38bdf8;
+    --brand: #8A2BE2; /* Roxo */
+    --border-color: #38bdf8;
+  }
+
+  /* PDF.js Text Layer Styles */
+  .textLayer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    opacity: 0.2;
+    line-height: 1.0;
+    pointer-events: none;
+  }
+
+  .textLayer > span {
+    color: transparent;
+    position: absolute;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+    pointer-events: all;
+  }
+  
+  ::selection {
+    background: var(--brand);
+    color: var(--bg-main);
+    opacity: 0.3;
+  }
+
+  /* --- PDF.js FONT MAPPINGS --- */
+  /* Fix for "Cannot load system font" warnings by providing direct URLs to metric-compatible Google Fonts (Tinos & Arimo) */
+  
+  /* TimesNewRoman (Mapped to Tinos) */
+  @font-face {
+    font-family: 'TimesNewRoman';
+    src: local('Times New Roman'), local('Times'),
+         url('https://fonts.gstatic.com/s/tinos/v26/buE4poGcdUh7N8st.woff2') format('woff2');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'TimesNewRoman-Bold';
+    src: local('Times New Roman Bold'), local('Times Bold'),
+         url('https://fonts.gstatic.com/s/tinos/v26/buE3poGcdUh7N8xrJjU2.woff2') format('woff2');
+    font-weight: bold;
+    font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'TimesNewRoman-Italic';
+    src: local('Times New Roman Italic'), local('Times Italic'),
+         url('https://fonts.gstatic.com/s/tinos/v26/buE9poGcdUh7N8z1OTo.woff2') format('woff2');
+    font-weight: normal;
+    font-style: italic;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'TimesNewRoman-BoldItalic';
+    src: local('Times New Roman Bold Italic'), local('Times Bold Italic'),
+         url('https://fonts.gstatic.com/s/tinos/v26/buE0poGcdUh7N8xrBsw2zQ.woff2') format('woff2');
+    font-weight: bold;
+    font-style: italic;
+    font-display: swap;
+  }
+
+  /* Arial (Mapped to Arimo) */
+  @font-face {
+    font-family: 'Arial';
+    src: local('Arial'), local('Helvetica'),
+         url('https://fonts.gstatic.com/s/arimo/v28/P5sfzZCDf9_T_3cV7NCUECyoxhk.woff2') format('woff2');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'Arial-Bold';
+    src: local('Arial Bold'), local('Helvetica Bold'),
+         url('https://fonts.gstatic.com/s/arimo/v28/P5sMzZCDf9_T_10ZxCJ_Eeyi1m0t.woff2') format('woff2');
+    font-weight: bold;
+    font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'Arial-Italic';
+    src: local('Arial Italic'), local('Helvetica Italic'),
+         url('https://fonts.gstatic.com/s/arimo/v28/P5sdzZCDf9_T_10c3iB0Eyu4.woff2') format('woff2');
+    font-weight: normal;
+    font-style: italic;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'Arial-BoldItalic';
+    src: local('Arial Bold Italic'), local('Helvetica Bold Italic'),
+         url('https://fonts.gstatic.com/s/arimo/v28/P5sJzZCDf9_T_10c3i9MEe6w1m0.woff2') format('woff2');
+    font-weight: bold;
+    font-style: italic;
+    font-display: swap;
+  }
+</style>
+</head>
+  <body class="bg-bg text-text overflow-hidden transition-colors duration-300">
+    <div id="root"></div>
+  </body>
+</html>
