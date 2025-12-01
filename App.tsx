@@ -9,7 +9,7 @@ import { ThemeSwitcher } from './components/ThemeSwitcher';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { AppState, DriveFile } from './types';
-import { ShieldCheck, Upload, LogIn, RefreshCw, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Upload, LogIn, RefreshCw, AlertCircle, XCircle, Copy } from 'lucide-react';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -20,6 +20,7 @@ export default function App() {
   });
   
   const [loadingAuth, setLoadingAuth] = useState(true);
+  const [authError, setAuthError] = useState<{title: string, message: string, code?: string} | null>(null);
   
   // Navigation State
   const [currentView, setCurrentView] = useState<'dashboard' | 'browser' | 'viewer'>('dashboard');
@@ -52,17 +53,39 @@ export default function App() {
   }, []);
 
   const handleLogin = async () => {
+    setAuthError(null);
     try {
       const result = await signInWithGoogleDrive();
       setAccessToken(result.accessToken);
       // Persist token
       sessionStorage.setItem('drive_access_token', result.accessToken);
-    } catch (e) {
-      alert("Falha no login. Veja o console.");
+    } catch (e: any) {
+      console.error("Login error full:", e);
+      
+      let errorData = {
+        title: "Falha no Login",
+        message: "Ocorreu um erro inesperado. Tente novamente.",
+        code: e.code
+      };
+
+      if (e.code === 'auth/unauthorized-domain') {
+        errorData = {
+          title: "Domínio Não Autorizado",
+          message: `O domínio atual (${window.location.hostname}) não está autorizado no Firebase Console. Adicione-o em Authentication > Settings > Authorized Domains.`,
+          code: e.code
+        };
+      } else if (e.code === 'auth/popup-closed-by-user') {
+        return; // Ignore user closing popup
+      } else if (e.message) {
+         errorData.message = e.message;
+      }
+
+      setAuthError(errorData);
     }
   };
 
   const handleLogout = async () => {
+    setAuthError(null);
     await logout();
     setAccessToken(null);
     sessionStorage.removeItem('drive_access_token');
@@ -212,6 +235,40 @@ export default function App() {
         {mainContent}
       </div>
       
+      {/* Error Toast / Banner */}
+      {authError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-md p-4 animate-in slide-in-from-top-4">
+          <div className="bg-surface border border-red-500/50 rounded-xl shadow-2xl p-4 flex gap-4 text-text relative">
+            <div className="bg-red-500/10 p-2 rounded-full h-fit text-red-500">
+              <AlertCircle size={24} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-bold text-red-500 mb-1">{authError.title}</h3>
+              <p className="text-sm text-text-sec mb-2 break-words">{authError.message}</p>
+              
+              {authError.code === 'auth/unauthorized-domain' && (
+                <div className="bg-bg p-2 rounded border border-border flex items-center justify-between gap-2 mt-2">
+                  <code className="text-xs text-brand truncate flex-1">{window.location.hostname}</code>
+                  <button 
+                    onClick={() => navigator.clipboard.writeText(window.location.hostname)}
+                    className="p-1 hover:bg-white/10 rounded text-text-sec hover:text-text transition"
+                    title="Copiar domínio"
+                  >
+                    <Copy size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+            <button 
+              onClick={() => setAuthError(null)}
+              className="absolute top-2 right-2 text-text-sec hover:text-text p-1"
+            >
+              <XCircle size={18} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Persistent Components */}
       <input 
         type="file" 
