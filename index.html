@@ -23,25 +23,12 @@
       }
     </script>
     <!-- PDF.js Worker style fix for some environments -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/web/pdf_viewer.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/web/pdf_viewer.css">
     <!-- Google Fonts for PDF Compatibility (Tinos=Times, Arimo=Arial) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Arimo:ital,wght@0,400;0,700;1,400;1,700&family=Tinos:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
     
-  <script type="importmap">
-{
-  "imports": {
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
-    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/",
-    "idb": "https://aistudiocdn.com/idb@^8.0.3",
-    "pdfjs-dist": "https://aistudiocdn.com/pdfjs-dist@^5.4.449"
-  }
-}
-</script>
 <style>
   /* --- THEME VARIABLES --- */
   :root {
@@ -291,8 +278,24 @@
     font-display: swap;
   }
 </style>
+<script type="importmap">
+{
+  "imports": {
+    "vite": "https://aistudiocdn.com/vite@^7.2.6",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "pdfjs-dist": "https://aistudiocdn.com/pdfjs-dist@^5.4.449",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "idb": "https://aistudiocdn.com/idb@^8.0.3"
+  }
+}
+</script>
 </head>
   <body class="bg-bg text-text overflow-hidden transition-colors duration-300">
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
