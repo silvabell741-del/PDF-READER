@@ -142,6 +142,20 @@
   .dragon-year .sidebar-text {
     color: #FFD700 !important;
   }
+  /* Custom Menu Button Style for Dragon Year Theme (Gold & Red 3D Button) */
+  .dragon-year .custom-menu-btn {
+    background-color: #FFC107 !important; /* Amber equivalent */
+    color: #991B1B !important; /* Red-800 text */
+    border: 2px solid #7F1D1D !important; /* Red-900 border */
+    border-radius: 12px !important;
+    box-shadow: 0 4px 0 #7F1D1D !important; /* 3D effect shadow */
+    opacity: 1 !important;
+    transition: all 0.1s ease-in-out;
+  }
+  .dragon-year .custom-menu-btn:active {
+    transform: translateY(4px) !important;
+    box-shadow: none !important;
+  }
 
   /* 7. Maré do Amanhecer */
   .morning-tide {
@@ -198,7 +212,8 @@
   /* We rely on pdf_viewer.css for positioning, but we need to ensure visibility */
   .textLayer {
     opacity: 1 !important; /* Ensure the layer itself (and selection box) is fully visible */
-    mix-blend-mode: multiply;
+    /* mix-blend-mode: multiply; -> REMOVED: Can cause selection issues with transparent text */
+    z-index: 10;
   }
 
   .textLayer > span {

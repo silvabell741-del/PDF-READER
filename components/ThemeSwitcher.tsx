@@ -2,13 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Palette, Check } from 'lucide-react';
 
 const themes = [
-  { id: 'midnight', name: 'Meia-noite (Padrão)' },
+  { id: 'midnight', name: 'Meia-noite' },
   { id: 'slate', name: 'Slate (Clássico)' },
   { id: 'high-contrast', name: 'Alto Contraste' },
   { id: 'mn', name: 'MN (Dark Moderno)' },
   { id: 'emerald-sovereignty', name: 'Soberania Esmeralda' },
   { id: 'galactic-aurora', name: 'Aurora Galática' },
-  { id: 'dragon-year', name: 'Ano do Dragão' },
+  { id: 'dragon-year', name: 'Ano do Dragão (Padrão)' },
   { id: 'morning-tide', name: 'Maré do Amanhecer' },
   { id: 'akebono-dawn', name: 'Akebono (Amanhecer)' },
   { id: 'itoshi-sae', name: 'Itoshi Sae (Void)' },
@@ -19,9 +19,9 @@ export const ThemeSwitcher: React.FC = () => {
   // Initialize state from localStorage directly to avoid flicker/reset on mount
   const [currentTheme, setCurrentTheme] = useState(() => {
     if (typeof localStorage !== 'undefined') {
-      return localStorage.getItem('app-theme') || 'midnight';
+      return localStorage.getItem('app-theme') || 'dragon-year';
     }
-    return 'midnight';
+    return 'dragon-year';
   });
 
   const applyTheme = (themeId: string) => {
@@ -42,6 +42,7 @@ export const ThemeSwitcher: React.FC = () => {
     // Sync DOM on mount without triggering state update
     const root = document.documentElement;
     themes.forEach(t => root.classList.remove(t.id));
+    
     if (currentTheme !== 'midnight') {
       root.classList.add(currentTheme);
     }

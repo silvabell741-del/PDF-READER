@@ -76,7 +76,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
       {/* Header & Tools */}
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 md:mb-8 gap-4">
         <div className="flex items-center gap-3">
-          <button onClick={onToggleMenu} className="md:hidden p-2 -ml-2 text-text-sec hover:text-text rounded-full hover:bg-surface transition">
+          <button onClick={onToggleMenu} className="custom-menu-btn md:hidden p-2 -ml-2 text-text-sec hover:text-text rounded-full hover:bg-surface transition">
             <Menu size={24} />
           </button>
           <h2 className="text-2xl md:text-3xl font-normal tracking-tight">Meus Arquivos</h2>

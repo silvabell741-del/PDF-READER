@@ -29,7 +29,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUp
       
       {/* Mobile Menu Button */}
       <div className="md:hidden mb-4">
-        <button onClick={onToggleMenu} className="p-2 -ml-2 text-text-sec hover:text-text rounded-full hover:bg-surface transition">
+        <button onClick={onToggleMenu} className="custom-menu-btn p-2 -ml-2 text-text-sec hover:text-text rounded-full hover:bg-surface transition">
           <Menu size={24} />
         </button>
       </div>
