@@ -13,7 +13,19 @@ export async function listPdfFiles(accessToken: string): Promise<DriveFile[]> {
 
   if (!response.ok) {
     if (response.status === 401) throw new Error("Unauthorized");
-    throw new Error("Failed to fetch Drive files");
+    
+    // Tenta ler o erro detalhado do Google
+    try {
+      const errorData = await response.json();
+      const message = errorData.error?.message || "Erro desconhecido na API do Drive";
+      console.error("Drive API Error:", errorData);
+      throw new Error(message);
+    } catch (e) {
+      if (e instanceof Error && e.message !== "Erro desconhecido na API do Drive") {
+        throw e; // Relança o erro detalhado
+      }
+      throw new Error(`Falha ao buscar arquivos (Status: ${response.status})`);
+    }
   }
 
   const data = await response.json();
@@ -25,6 +37,15 @@ export async function downloadDriveFile(accessToken: string, driveFileId: string
     `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
-  if (!res.ok) throw new Error("Falha no download do Drive");
+  
+  if (!res.ok) {
+    if (res.status === 403) throw new Error("Permissão negada (403). Verifique se a API do Drive está ativada.");
+    try {
+        const err = await res.json();
+        throw new Error(err.error?.message || "Erro no download");
+    } catch {
+        throw new Error("Falha no download do Drive");
+    }
+  }
   return res.blob();
 }
