@@ -5,7 +5,6 @@ import { signInWithGoogleDrive, logout } from './services/authService';
 import { syncPendingAnnotations, addRecentFile } from './services/storageService';
 import { DriveBrowser } from './components/DriveBrowser';
 import { PdfViewer } from './components/PdfViewer';
-import { ThemeSwitcher } from './components/ThemeSwitcher';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { AppState, DriveFile } from './types';
@@ -311,8 +310,6 @@ export default function App() {
         onChange={handleLocalUpload} 
         className="hidden" 
       />
-      
-      <ThemeSwitcher />
     </>
   );
 }

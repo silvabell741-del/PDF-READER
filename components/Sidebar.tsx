@@ -1,6 +1,7 @@
-import React from 'react';
-import { Home, FolderOpen, LogOut, User as UserIcon, X } from 'lucide-react';
+import React, { useState } from 'react';
+import { Home, FolderOpen, LogOut, User as UserIcon, X, Palette, ChevronDown, ChevronRight } from 'lucide-react';
 import { User } from 'firebase/auth';
+import { ThemeSwitcher } from './ThemeSwitcher';
 
 interface SidebarProps {
   currentView: 'dashboard' | 'browser';
@@ -12,6 +13,8 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, user, onLogout, isOpen, onClose }) => {
+  const [isThemesOpen, setIsThemesOpen] = useState(false);
+
   return (
     <>
       {/* Mobile Backdrop */}
@@ -44,9 +47,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, use
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 py-6 px-4 space-y-2">
+          <nav className="flex-1 py-6 px-4 space-y-2 overflow-y-auto custom-scrollbar">
             <button
-              onClick={() => onChangeView('dashboard')}
+              onClick={() => { onChangeView('dashboard'); onClose(); }}
               className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 group sidebar-text ${
                 currentView === 'dashboard' 
                   ? 'bg-brand/10 text-brand font-medium' 
@@ -58,7 +61,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, use
             </button>
 
             <button
-              onClick={() => onChangeView('browser')}
+              onClick={() => { onChangeView('browser'); onClose(); }}
               className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 group sidebar-text ${
                 currentView === 'browser' 
                   ? 'bg-brand/10 text-brand font-medium' 
@@ -68,6 +71,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, use
               <FolderOpen size={22} className={currentView === 'browser' ? "fill-brand/20" : ""} />
               <span className="text-base">Meus Arquivos</span>
             </button>
+
+            {/* Theme Accordion */}
+            <div className="pt-4 mt-4 border-t border-border">
+              <button 
+                onClick={() => setIsThemesOpen(!isThemesOpen)}
+                className="w-full flex items-center justify-between px-4 py-3 text-text-sec hover:text-text rounded-2xl hover:bg-white/5 transition-colors sidebar-text"
+              >
+                <div className="flex items-center gap-4">
+                  <Palette size={22} />
+                  <span className="text-base">Temas</span>
+                </div>
+                {isThemesOpen ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}
+              </button>
+              
+              {isThemesOpen && (
+                <div className="pl-12 pr-2 py-2 animate-in slide-in-from-top-2">
+                   <ThemeSwitcher />
+                </div>
+              )}
+            </div>
           </nav>
 
           {/* User Profile */}

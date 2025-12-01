@@ -3,8 +3,8 @@ import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from 'pdfjs-d
 import { PDFDocument, rgb } from 'pdf-lib';
 import { Annotation, DriveFile } from '../types';
 import { saveAnnotation, loadAnnotations } from '../services/storageService';
-import { downloadDriveFile, uploadFileToDrive } from '../services/driveService';
-import { ArrowLeft, Highlighter, Loader2, Settings, X, Type, List, MousePointer2, Save, ScanLine, AlertCircle } from 'lucide-react';
+import { downloadDriveFile, uploadFileToDrive, deleteDriveFile } from '../services/driveService';
+import { ArrowLeft, Highlighter, Loader2, X, Type, List, MousePointer2, Save, ScanLine, ZoomIn, ZoomOut, Menu, PaintBucket, Sliders } from 'lucide-react';
 
 // Explicitly set worker to specific version to match package.json (5.4.449)
 GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.worker.min.mjs`;
@@ -30,44 +30,32 @@ interface SelectionState {
 }
 
 // --- Custom Text Renderer ---
-// Renders invisible text over the canvas to enable native browser selection
 const renderCustomTextLayer = (textContent: any, container: HTMLElement, viewport: any) => {
   container.innerHTML = '';
   
   textContent.items.forEach((item: any) => {
-    // Skip empty or purely whitespace items
     if (!item.str || item.str.trim().length === 0) return;
 
-    // item.transform is [scaleX, skewX, skewY, scaleY, x, y]
     const tx = item.transform;
-    
-    // Calculate font size based on the scaling factor (hypotenuse of scaleX/skewX)
     const fontHeight = Math.sqrt(tx[3] * tx[3] + tx[2] * tx[2]);
     const fontSize = fontHeight * viewport.scale;
 
-    // Convert PDF point (bottom-left origin) to Viewport point (top-left origin)
-    // transform[4] is X, transform[5] is Y in PDF space
     const [x, y] = viewport.convertToViewportPoint(tx[4], tx[5]);
 
     const span = document.createElement('span');
     span.textContent = item.str;
-    
-    // Styles to position text correctly over the image
     span.style.left = `${x}px`;
-    // Adjust Y: PDF coords are baseline, DOM coords are top-left. 
-    // Subtracting fontSize aligns the top roughly with the text.
     span.style.top = `${y - fontSize}px`; 
     span.style.fontSize = `${fontSize}px`;
-    span.style.fontFamily = 'sans-serif'; // Generic font is usually sufficient for selection
+    span.style.fontFamily = 'sans-serif';
     span.style.position = 'absolute';
-    span.style.color = 'transparent'; // Invisible text
+    span.style.color = 'transparent';
     span.style.whiteSpace = 'pre';
     span.style.cursor = 'text';
     span.style.transformOrigin = '0% 0%';
     span.style.lineHeight = '1';
     span.style.pointerEvents = 'all';
 
-    // Handle Rotation (if needed)
     const angle = Math.atan2(tx[1], tx[0]);
     if (angle !== 0) {
       span.style.transform = `rotate(${angle}rad)`;
@@ -115,12 +103,10 @@ const PdfPage: React.FC<PdfPageProps> = ({
         const page = await pdfDoc.getPage(pageNumber);
         const viewport = page.getViewport({ scale });
         
-        // 1. Setup Canvas
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Only render if dimensions change or not rendered yet
         if (canvas.width !== viewport.width || !rendered) {
           canvas.width = viewport.width;
           canvas.height = viewport.height;
@@ -130,10 +116,8 @@ const PdfPage: React.FC<PdfPageProps> = ({
             viewport: viewport,
           };
 
-          // Cast to any to bypass strict TS check on RenderParameters which demands 'canvas' in some versions
           await page.render(renderContext as any).promise;
           
-          // 2. Setup Text Layer (Custom Implementation)
           const textContent = await page.getTextContent();
           
           if (active) {
@@ -144,7 +128,6 @@ const PdfPage: React.FC<PdfPageProps> = ({
           textLayerDiv.style.width = `${viewport.width}px`;
           textLayerDiv.style.height = `${viewport.height}px`;
 
-          // Use our custom renderer instead of library one to avoid export errors
           if (active) {
             renderCustomTextLayer(textContent, textLayerDiv, viewport);
             setRendered(true);
@@ -161,8 +144,6 @@ const PdfPage: React.FC<PdfPageProps> = ({
 
   const handleContainerClick = (e: React.MouseEvent) => {
     if (activeTool !== 'text' || !pageContainerRef.current) return;
-    
-    // Prevent triggering if clicking on an existing annotation
     if ((e.target as HTMLElement).closest('.annotation-item')) return;
 
     const rect = pageContainerRef.current.getBoundingClientRect();
@@ -180,7 +161,6 @@ const PdfPage: React.FC<PdfPageProps> = ({
       style={{ width: 'fit-content', height: 'fit-content' }}
       onClick={handleContainerClick}
     >
-      {/* 0. No Text Warning (Scanned PDF) */}
       {!hasText && rendered && (
          <div className="absolute -top-6 left-0 flex items-center gap-1 text-xs text-text-sec opacity-70">
             <ScanLine size={12} />
@@ -188,7 +168,6 @@ const PdfPage: React.FC<PdfPageProps> = ({
          </div>
       )}
 
-      {/* 1. PDF Canvas with Color Filter */}
       <canvas 
         ref={canvasRef}
         style={{ 
@@ -197,7 +176,6 @@ const PdfPage: React.FC<PdfPageProps> = ({
         }}
       />
 
-      {/* 2. Annotations Layer */}
       <div className="absolute inset-0">
         {annotations.map((ann, i) => {
           const isHighlight = ann.type === 'highlight';
@@ -220,7 +198,6 @@ const PdfPage: React.FC<PdfPageProps> = ({
               />
             );
           } else {
-            // Text Note
             return (
               <div
                 key={ann.id || i}
@@ -238,7 +215,6 @@ const PdfPage: React.FC<PdfPageProps> = ({
                 >
                   <p className="whitespace-pre-wrap break-words font-medium leading-tight">{ann.text}</p>
                   
-                  {/* Delete Button (Visible on Hover) */}
                   {ann.id && !ann.id.startsWith('temp') && (
                     <button 
                       onClick={(e) => {
@@ -257,8 +233,6 @@ const PdfPage: React.FC<PdfPageProps> = ({
         })}
       </div>
 
-      {/* 3. Text Selection Layer */}
-      {/* pointer-events-none added ONLY when using text tool to allow clicking through to canvas */}
       <div 
         ref={textLayerRef} 
         className={`textLayer ${activeTool === 'text' ? 'pointer-events-none' : ''}`}
@@ -279,16 +253,16 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isExporting, setIsExporting] = useState(false); // State for saving to Drive
+  const [isExporting, setIsExporting] = useState(false);
   const [scale, setScale] = useState(1.3);
   
   // Selection & Tools State
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [activeTool, setActiveTool] = useState<'cursor' | 'text'>('cursor');
   const [showSidebar, setShowSidebar] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<'annotations' | 'settings'>('annotations');
 
   // Settings State
-  const [showSettings, setShowSettings] = useState(false);
   const [pageColor, setPageColor] = useState("#ffffff");
   const [textColor, setTextColor] = useState("#000000");
   const [highlightColor, setHighlightColor] = useState("#facc15"); 
@@ -324,7 +298,6 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
         }
       } catch (err) {
         console.error("Error loading PDF:", err);
-        // More descriptive error for users
         alert(`Falha ao carregar PDF. Verifique se o arquivo é válido. (Erro: ${err instanceof Error ? err.message : String(err)})`);
       } finally {
         if (mounted) setLoading(false);
@@ -339,16 +312,11 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
   // Global Selection Handler (For Highlight)
   useEffect(() => {
     const handleSelectionEnd = (e: Event) => {
-      // If using text tool, ignore selection logic
       if (activeTool === 'text') return;
-
-      // Check if clicking inside UI elements (buttons, popups)
       if (e.target instanceof Element && e.target.closest('button, input, select, .ui-panel')) return;
 
-      // Small timeout to let browser finish selection processing (especially on mobile)
       setTimeout(() => {
         const sel = window.getSelection();
-        // If no selection or collapsed (just a click), clear state
         if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
           setSelection(null);
           return;
@@ -377,17 +345,12 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
         const rects = Array.from(range.getClientRects());
         if (rects.length === 0) return;
 
-        // Calculate Popup Position Relative to Scrolling Container
-        // This ensures the popup moves with the scroll and sits correctly above the text
-        const boundingRect = range.getBoundingClientRect(); // Viewport coords
+        const boundingRect = range.getBoundingClientRect();
         const containerRect = containerRef.current.getBoundingClientRect();
         
-        // Centered horizontally over selection, spaced slightly above
         const popupX = boundingRect.left - containerRect.left + (boundingRect.width / 2) + containerRef.current.scrollLeft;
-        const popupY = boundingRect.top - containerRect.top + containerRef.current.scrollTop - 10;
+        const popupY = boundingRect.bottom - containerRect.top + containerRef.current.scrollTop + 10;
 
-        // Calculate rects relative to the PAGE element for saving data
-        // These coords are what we store in DB to redraw accurately later
         const pageRect = pageElement.getBoundingClientRect();
         const relativeRects = rects.map(r => ({
           x: r.left - pageRect.left,
@@ -421,7 +384,6 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
   const createHighlight = async () => {
     if (!selection) return;
 
-    // Use stored relative rects which are safe against scrolling/resizing
     const newAnns: Annotation[] = selection.relativeRects.map(rect => {
       return {
         page: selection.page,
@@ -449,15 +411,14 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
     const text = window.prompt("Digite sua nota:");
     if (!text || !text.trim()) return;
 
-    // Reset to cursor mode after adding text for better UX
     setActiveTool('cursor');
 
     const newAnn: Annotation = {
       page,
-      bbox: [x, y, 0, 0], // Width/Height ignored for text type in this render model
+      bbox: [x, y, 0, 0],
       type: 'note',
       text: text,
-      color: '#fef9c3', // Sticky note yellow
+      color: '#fef9c3',
       opacity: 1
     };
 
@@ -478,7 +439,6 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
     }
   };
 
-  // --- PDF Export Logic using pdf-lib ---
   const handleSaveToDrive = async () => {
     if (!accessToken || !originalBlob) {
       alert("Erro: Arquivo ou sessão inválida.");
@@ -486,7 +446,7 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
     }
 
     const confirmSave = window.confirm(
-      "Isso criará uma cópia do arquivo no seu Google Drive com todas as anotações visíveis em outros leitores (Adobe, Drive Preview, etc). Deseja continuar?"
+      "Isso criará uma versão anotada e SUBSTITUIRÁ o arquivo original. As anotações ficarão permanentes no PDF. Deseja continuar?"
     );
 
     if (!confirmSave) return;
@@ -494,12 +454,10 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
     setIsExporting(true);
 
     try {
-      // 1. Load original PDF into pdf-lib
       const existingPdfBytes = await originalBlob.arrayBuffer();
       const pdfDoc = await PDFDocument.load(existingPdfBytes);
       const pages = pdfDoc.getPages();
 
-      // 2. Helper to convert Hex to RGB
       const hexToRgb = (hex: string) => {
         const bigint = parseInt(hex.replace('#', ''), 16);
         const r = (bigint >> 16) & 255;
@@ -508,24 +466,16 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
         return rgb(r / 255, g / 255, b / 255);
       };
 
-      // 3. Draw annotations
       for (const ann of annotations) {
         if (ann.page > pages.length) continue;
-        const page = pages[ann.page - 1]; // Pages are 0-indexed in pdf-lib
+        const page = pages[ann.page - 1]; 
         const { height } = page.getSize();
-        
-        // --- Coordinate Conversion ---
-        // App coordinates are pixels relative to rendered canvas at `scale` (default 1.3)
-        // PDF coordinates are points (72 DPI) usually at scale 1.0 (unless internally scaled)
-        // Y-axis in PDF starts at bottom, Y-axis in Browser starts at top.
         
         const rectX = ann.bbox[0] / scale;
         const rectY = ann.bbox[1] / scale;
         const rectW = ann.bbox[2] / scale;
         const rectH = ann.bbox[3] / scale;
 
-        // Flip Y axis
-        // PDF Y = PageHeight - BrowserY - BrowserHeight
         const pdfY = height - rectY - rectH;
 
         if (ann.type === 'highlight') {
@@ -538,31 +488,25 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
             opacity: ann.opacity ?? 0.4,
           });
         } else if (ann.type === 'note' && ann.text) {
-          // Drawing text notes is more complex (font embedding etc), 
-          // For now, we will draw a small sticky note icon or box with text
           const noteColor = hexToRgb(ann.color || '#fef9c3');
-          
-          // Draw a small "sticky note" box
           page.drawRectangle({
             x: rectX,
-            y: height - rectY - 20, // Adjust Y slightly
+            y: height - rectY - 20,
             width: 150,
-            height: 50, // Fixed size for simplicity in this version
+            height: 50,
             color: noteColor,
           });
         }
       }
 
-      // 4. Save Modified PDF
       const pdfBytes = await pdfDoc.save();
-      // Cast to any to avoid TS mismatch between Uint8Array and BlobPart in strict builds
       const newPdfBlob = new Blob([pdfBytes as any], { type: 'application/pdf' });
-
-      // 5. Upload to Drive
-      const newFileName = `${fileName.replace('.pdf', '')} (Anotado).pdf`;
+      const newFileName = fileName; 
       await uploadFileToDrive(accessToken, newPdfBlob, newFileName, fileParents);
+      await deleteDriveFile(accessToken, fileId);
 
-      alert(`Sucesso! Arquivo "${newFileName}" salvo no seu Google Drive.`);
+      alert(`Sucesso! O arquivo original foi substituído pela versão anotada.`);
+      onBack();
 
     } catch (err: any) {
       console.error("Export error:", err);
@@ -577,7 +521,6 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
     const pageEl = document.querySelector(`.pdf-page[data-page-number="${ann.page}"]`);
     if (pageEl) {
       pageEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      
       if (ann.id) {
         setTimeout(() => {
           const el = document.getElementById(`ann-${ann.id}`);
@@ -588,9 +531,10 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
         }, 500);
       }
     }
+    // Close sidebar on mobile after clicking
+    if (window.innerWidth < 768) setShowSidebar(false);
   };
 
-  // Color Filter Matrix
   const filterValues = useMemo(() => {
     const hexToRgb = (hex: string) => {
       const bigint = parseInt(hex.slice(1), 16);
@@ -633,157 +577,147 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
         </filter>
       </svg>
 
-      {/* Toolbar */}
-      <div className="h-16 bg-surface border-b border-border flex items-center justify-between px-4 sticky top-0 z-30 shadow-lg">
-        <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full transition text-text">
-            <ArrowLeft />
+      {/* Minimal Header */}
+      <div className="h-14 bg-surface/80 backdrop-blur border-b border-border flex items-center justify-between px-4 sticky top-0 z-30 shadow-sm">
+        <div className="flex items-center gap-3 min-w-0">
+          <button onClick={onBack} className="p-2 -ml-2 hover:bg-white/10 rounded-full transition text-text">
+            <ArrowLeft size={20} />
           </button>
-          <div className="flex flex-col">
-             <h1 className="text-text font-medium truncate max-w-[150px] md:max-w-xs text-sm md:text-base">{fileName}</h1>
+          <div className="flex flex-col min-w-0">
+             <h1 className="text-text font-medium truncate text-sm md:text-base">{fileName}</h1>
              <span className="text-xs text-text-sec">{numPages} páginas</span>
           </div>
         </div>
         
-        {/* Tools */}
-        <div className="flex items-center bg-bg border border-border rounded-lg p-1 gap-1">
-          <button 
-            onClick={() => setActiveTool('cursor')}
-            className={`p-2 rounded-md transition ${activeTool === 'cursor' ? 'bg-brand text-bg' : 'text-text-sec hover:text-text'}`}
-            title="Modo Seleção"
-          >
-            <MousePointer2 size={18} />
-          </button>
-          <button 
-            onClick={() => setActiveTool('text')}
-            className={`p-2 rounded-md transition ${activeTool === 'text' ? 'bg-brand text-bg' : 'text-text-sec hover:text-text'}`}
-            title="Adicionar Nota"
-          >
-            <Type size={18} />
-          </button>
-        </div>
-        
         <div className="flex items-center gap-2">
-          {/* Export Button */}
-          {accessToken && (
-            <button
-              onClick={handleSaveToDrive}
-              disabled={isExporting}
-              className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-brand/10 text-brand rounded-lg hover:bg-brand/20 transition disabled:opacity-50"
-              title="Salvar cópia no Drive com anotações fixas"
+            {isSaving && <Loader2 size={16} className="animate-spin text-brand" />}
+            
+            <button 
+                onClick={() => setShowSidebar(true)} 
+                className="p-2 hover:bg-white/10 rounded-full transition text-text"
             >
-              {isExporting ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-              <span className="text-sm font-medium">Salvar Cópia</span>
+                <Menu size={20} />
             </button>
-          )}
-
-          {isSaving && <span className="hidden md:flex text-xs text-brand items-center gap-1"><Loader2 size={12} className="animate-spin"/> Salvando</span>}
-          
-          <button 
-            onClick={() => setShowSidebar(!showSidebar)}
-            className={`p-2 rounded-lg transition ${showSidebar ? 'bg-brand/10 text-brand' : 'text-text-sec hover:text-text hover:bg-white/5'}`}
-            title="Lista de Anotações"
-          >
-            <List size={20} />
-          </button>
-
-          <button 
-            onClick={() => setShowSettings(!showSettings)}
-            className={`p-2 rounded-lg transition ${showSettings ? 'bg-brand/10 text-brand' : 'text-text-sec hover:text-text hover:bg-white/5'}`}
-          >
-            <Settings size={20} />
-          </button>
         </div>
       </div>
 
-      {/* Main Content Area: Sidebar + Viewer */}
+      {/* Main Content Area: Viewer + Sidebar */}
       <div className="flex-1 flex overflow-hidden relative">
         
-        {/* Sidebar */}
-        <div className={`${showSidebar ? 'w-80 translate-x-0' : 'w-0 -translate-x-full opacity-0'} transition-all duration-300 bg-surface border-r border-border flex flex-col z-20 absolute md:relative h-full`}>
-          <div className="p-4 border-b border-border bg-surface/95 backdrop-blur font-semibold text-text flex justify-between">
-            <span>Anotações ({annotations.length})</span>
-            <button onClick={() => setShowSidebar(false)} className="md:hidden text-text"><X size={16}/></button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-2">
-            {annotations.length === 0 && (
-              <div className="text-center text-text-sec mt-10 text-sm p-4">
-                Nenhuma anotação. <br/> Selecione texto para destacar ou use a ferramenta "Texto".
-              </div>
-            )}
-            {annotations.map((ann, idx) => (
-              <div 
-                key={ann.id || idx}
-                onClick={() => scrollToAnnotation(ann)}
-                className="bg-bg p-3 rounded-lg border border-border hover:border-brand cursor-pointer group transition-colors"
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`w-2 h-2 rounded-full`} style={{ backgroundColor: ann.color || ann.type === 'highlight' ? highlightColor : '#fef9c3' }} />
-                  <span className="text-xs text-text-sec uppercase font-bold tracking-wider">{ann.type === 'highlight' ? 'Destaque' : 'Nota'} &bull; Pág {ann.page}</span>
-                </div>
-                <p className="text-sm text-text line-clamp-3 leading-relaxed">
-                  {ann.text || "Sem conteúdo"}
-                </p>
-              </div>
-            ))}
-          </div>
-          
-          {/* Mobile Export Button (Sidebar Footer) */}
-          {accessToken && (
-            <div className="p-4 border-t border-border md:hidden">
-              <button
-                onClick={handleSaveToDrive}
-                disabled={isExporting}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-brand text-bg rounded-lg font-medium shadow-lg hover:brightness-110 disabled:opacity-50"
-              >
-                {isExporting ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                Salvar Cópia no Drive
-              </button>
-            </div>
-          )}
-        </div>
+        {/* Sidebar Overlay (Mobile & Desktop) */}
+        {showSidebar && (
+            <div className="absolute inset-0 z-40 flex justify-end">
+                <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSidebar(false)} />
+                <div className="relative w-80 bg-surface h-full shadow-2xl flex flex-col animate-in slide-in-from-right-10 duration-200">
+                    
+                    {/* Sidebar Header */}
+                    <div className="flex items-center justify-between p-4 border-b border-border">
+                        <span className="font-semibold text-text">Menu</span>
+                        <button onClick={() => setShowSidebar(false)} className="text-text-sec hover:text-text">
+                            <X size={20} />
+                        </button>
+                    </div>
 
-        {/* Settings Panel (Absolute Overlay) */}
-        {showSettings && (
-          <div className="ui-panel absolute top-4 right-4 z-40 bg-surface border border-border p-4 rounded-xl shadow-2xl w-72 space-y-5 animate-in slide-in-from-top-2 max-h-[80vh] overflow-y-auto">
-             <div className="flex justify-between items-center pb-2 border-b border-border">
-              <h3 className="font-semibold text-text">Configurações</h3>
-              <button onClick={() => setShowSettings(false)} className="text-text-sec hover:text-text"><X size={16}/></button>
-            </div>
-            {/* Reading Theme */}
-            <div className="space-y-3">
-              <h4 className="text-xs text-text-sec uppercase font-bold tracking-wider">Modo de Leitura (Cores do PDF)</h4>
-              <div className="flex justify-between items-center">
-                <label className="text-sm text-text">Fundo</label>
-                <input type="color" value={pageColor} onChange={(e) => setPageColor(e.target.value)} className="h-6 w-8 rounded cursor-pointer bg-transparent border-none"/>
-              </div>
-              <div className="flex justify-between items-center">
-                <label className="text-sm text-text">Texto</label>
-                <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)} className="h-6 w-8 rounded cursor-pointer bg-transparent border-none"/>
-              </div>
-              <button onClick={() => { setPageColor("#ffffff"); setTextColor("#000000"); }} className="w-full py-1.5 text-xs bg-bg hover:brightness-110 border border-border rounded text-text mt-2">Resetar Cores</button>
-            </div>
-            {/* Highlighter Style */}
-            <div className="space-y-3 pt-2 border-t border-border">
-              <h4 className="text-xs text-text-sec uppercase font-bold tracking-wider flex items-center gap-2"><Highlighter size={12} /> Estilo do Destaque</h4>
-              <div className="flex justify-between items-center">
-                <label className="text-sm text-text">Cor</label>
-                <input type="color" value={highlightColor} onChange={(e) => setHighlightColor(e.target.value)} className="h-6 w-8 rounded cursor-pointer bg-transparent border-none"/>
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-text-sec">
-                  <span>Opacidade</span>
-                  <span>{Math.round(highlightOpacity * 100)}%</span>
+                    {/* Sidebar Tabs */}
+                    <div className="flex border-b border-border">
+                        <button 
+                            onClick={() => setSidebarTab('annotations')}
+                            className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2 ${sidebarTab === 'annotations' ? 'border-brand text-brand' : 'border-transparent text-text-sec hover:text-text'}`}
+                        >
+                            Anotações
+                        </button>
+                        <button 
+                            onClick={() => setSidebarTab('settings')}
+                            className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2 ${sidebarTab === 'settings' ? 'border-brand text-brand' : 'border-transparent text-text-sec hover:text-text'}`}
+                        >
+                            Ajustes
+                        </button>
+                    </div>
+
+                    {/* Sidebar Content */}
+                    <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                        {sidebarTab === 'annotations' ? (
+                            <div className="space-y-3">
+                                {annotations.length === 0 && (
+                                    <div className="text-center text-text-sec py-10 text-sm">
+                                        Nenhuma anotação. <br/> Selecione texto para começar.
+                                    </div>
+                                )}
+                                {annotations.map((ann, idx) => (
+                                    <div 
+                                        key={ann.id || idx}
+                                        onClick={() => scrollToAnnotation(ann)}
+                                        className="bg-bg p-3 rounded-lg border border-border hover:border-brand cursor-pointer group transition-colors"
+                                    >
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className={`w-2 h-2 rounded-full`} style={{ backgroundColor: ann.color || ann.type === 'highlight' ? highlightColor : '#fef9c3' }} />
+                                            <span className="text-xs text-text-sec uppercase font-bold tracking-wider">Pág {ann.page}</span>
+                                        </div>
+                                        <p className="text-sm text-text line-clamp-2 leading-relaxed">
+                                            {ann.text || "Sem conteúdo"}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="space-y-6 animate-in fade-in">
+                                {/* Color Settings */}
+                                <div className="space-y-3">
+                                    <h4 className="text-xs text-text-sec uppercase font-bold tracking-wider flex items-center gap-2">
+                                        <PaintBucket size={14} /> Leitura
+                                    </h4>
+                                    <div className="flex justify-between items-center bg-bg p-2 rounded-lg border border-border">
+                                        <label className="text-sm text-text">Fundo</label>
+                                        <input type="color" value={pageColor} onChange={(e) => setPageColor(e.target.value)} className="h-6 w-8 rounded cursor-pointer bg-transparent border-none"/>
+                                    </div>
+                                    <div className="flex justify-between items-center bg-bg p-2 rounded-lg border border-border">
+                                        <label className="text-sm text-text">Texto</label>
+                                        <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)} className="h-6 w-8 rounded cursor-pointer bg-transparent border-none"/>
+                                    </div>
+                                    <button onClick={() => { setPageColor("#ffffff"); setTextColor("#000000"); }} className="text-xs text-brand hover:underline w-full text-right">Resetar Cores</button>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <h4 className="text-xs text-text-sec uppercase font-bold tracking-wider flex items-center gap-2">
+                                        <Highlighter size={14} /> Destaque
+                                    </h4>
+                                    <div className="flex justify-between items-center bg-bg p-2 rounded-lg border border-border">
+                                        <label className="text-sm text-text">Cor</label>
+                                        <input type="color" value={highlightColor} onChange={(e) => setHighlightColor(e.target.value)} className="h-6 w-8 rounded cursor-pointer bg-transparent border-none"/>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between text-xs text-text-sec">
+                                            <span>Opacidade</span>
+                                            <span>{Math.round(highlightOpacity * 100)}%</span>
+                                        </div>
+                                        <input type="range" min="0.1" max="0.8" step="0.1" value={highlightOpacity} onChange={(e) => setHighlightOpacity(parseFloat(e.target.value))} className="w-full h-2 bg-bg rounded-lg appearance-none cursor-pointer accent-brand"/>
+                                    </div>
+                                </div>
+
+                                <div className="pt-4 border-t border-border">
+                                     {accessToken ? (
+                                        <button
+                                            onClick={handleSaveToDrive}
+                                            disabled={isExporting}
+                                            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-brand text-bg rounded-xl font-bold shadow-lg hover:brightness-110 disabled:opacity-50 transition-all"
+                                        >
+                                            {isExporting ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                                            Salvar e Substituir
+                                        </button>
+                                     ) : (
+                                         <p className="text-xs text-text-sec text-center">Modo offline/local. Exportação desativada.</p>
+                                     )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
-                <input type="range" min="0.1" max="0.8" step="0.1" value={highlightOpacity} onChange={(e) => setHighlightOpacity(parseFloat(e.target.value))} className="w-full h-2 bg-bg rounded-lg appearance-none cursor-pointer accent-brand"/>
-              </div>
             </div>
-          </div>
         )}
 
         {/* Viewer Area */}
         <div 
-          className="flex-1 overflow-y-auto bg-bg p-4 md:p-8 relative scroll-smooth" 
+          className="flex-1 overflow-y-auto bg-bg p-4 md:p-8 relative scroll-smooth pb-32" 
           ref={containerRef}
         >
           {pdfDoc && Array.from({ length: numPages }, (_, i) => i + 1).map((pageNum) => (
@@ -806,10 +740,12 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
           {/* Highlight Popover (Global for Viewer) */}
           {selection && (
             <div 
-              className="absolute z-50 transform -translate-x-1/2 -translate-y-full pb-2 animate-in fade-in zoom-in duration-150 origin-bottom"
+              className="absolute z-50 transform -translate-x-1/2 mt-2 animate-in fade-in zoom-in duration-150 origin-top"
               style={{ left: selection.popupX, top: selection.popupY }}
               onMouseDown={(e) => e.preventDefault()}
             >
+              <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-zinc-900 absolute left-1/2 -translate-x-1/2 -top-[6px]"></div>
+              
               <button
                 onClick={createHighlight}
                 className="bg-zinc-900 text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-2 hover:scale-105 transition-transform ring-1 ring-white/20"
@@ -817,12 +753,52 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
                 <Highlighter size={16} className="text-yellow-400" />
                 <span className="text-sm font-medium">Destacar</span>
               </button>
-              {/* Arrow */}
-              <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-zinc-900 absolute left-1/2 -translate-x-1/2 bottom-[2px]"></div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Floating Toolbar "Island" */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-surface/90 backdrop-blur border border-border p-2 rounded-2xl shadow-2xl animate-in slide-in-from-bottom-6 duration-300">
+         
+         {/* Zoom Controls */}
+         <div className="flex items-center bg-bg/50 rounded-xl p-1">
+             <button 
+                onClick={() => setScale(s => Math.max(0.5, s - 0.1))} 
+                className="p-2 hover:bg-white/10 rounded-lg text-text-sec hover:text-text transition"
+             >
+                <ZoomOut size={20} />
+             </button>
+             <span className="w-12 text-center text-xs font-mono text-text">{Math.round(scale * 100)}%</span>
+             <button 
+                onClick={() => setScale(s => Math.min(3.0, s + 0.1))} 
+                className="p-2 hover:bg-white/10 rounded-lg text-text-sec hover:text-text transition"
+             >
+                <ZoomIn size={20} />
+             </button>
+         </div>
+
+         <div className="w-px h-6 bg-border mx-1"></div>
+
+         {/* Tool Toggle */}
+         <div className="flex bg-bg/50 rounded-xl p-1">
+             <button 
+                 onClick={() => setActiveTool('cursor')}
+                 className={`p-2 rounded-lg transition-all ${activeTool === 'cursor' ? 'bg-brand text-bg shadow-sm' : 'text-text-sec hover:text-text'}`}
+                 title="Modo Seleção"
+             >
+                 <MousePointer2 size={20} />
+             </button>
+             <button 
+                 onClick={() => setActiveTool('text')}
+                 className={`p-2 rounded-lg transition-all ${activeTool === 'text' ? 'bg-brand text-bg shadow-sm' : 'text-text-sec hover:text-text'}`}
+                 title="Adicionar Nota"
+             >
+                 <Type size={20} />
+             </button>
+         </div>
+      </div>
+
     </div>
   );
 };
