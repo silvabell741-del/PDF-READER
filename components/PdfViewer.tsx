@@ -21,10 +21,12 @@ interface Props {
 
 interface SelectionState {
   page: number;
-  x: number;
-  y: number;
   text: string;
-  rects: DOMRect[];
+  // Position relative to the scrolling container
+  popupX: number;
+  popupY: number;
+  // Rects relative to the page element (for saving)
+  relativeRects: { x: number; y: number; width: number; height: number }[];
 }
 
 // --- Custom Text Renderer ---
@@ -85,11 +87,6 @@ interface PdfPageProps {
   activeTool: 'cursor' | 'text';
   onPageClick: (page: number, x: number, y: number) => void;
   onDeleteAnnotation: (id: string) => void;
-  // New props for selection highlight
-  selection?: SelectionState | null;
-  onHighlight?: () => void;
-  highlightColor?: string;
-  highlightOpacity?: number;
 }
 
 const PdfPage: React.FC<PdfPageProps> = ({ 
@@ -100,11 +97,7 @@ const PdfPage: React.FC<PdfPageProps> = ({
   annotations,
   activeTool,
   onPageClick,
-  onDeleteAnnotation,
-  selection,
-  onHighlight,
-  highlightColor,
-  highlightOpacity
+  onDeleteAnnotation
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
@@ -270,28 +263,6 @@ const PdfPage: React.FC<PdfPageProps> = ({
         className={`textLayer ${activeTool === 'text' ? 'pointer-events-none' : ''}`}
         style={{ zIndex: 10 }}
       />
-
-      {/* 4. Highlight Popover (Rendered inside the page for correct relative positioning) */}
-      {selection && (
-        <div 
-          className="absolute z-50 transform -translate-x-1/2 -translate-y-full pb-3 animate-in zoom-in slide-in-from-bottom-2 duration-200"
-          style={{ left: selection.x, top: selection.y }}
-          onMouseDown={(e) => e.preventDefault()} // Prevent focus loss and selection clearing
-        >
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onHighlight?.();
-            }}
-            className="flex items-center gap-2 bg-surface text-text px-3 py-1.5 rounded-full shadow-xl hover:scale-105 transition border border-brand/50 ring-1 ring-black/20"
-          >
-            <Highlighter size={14} className="text-brand" />
-            <div className="w-3 h-3 rounded-full border border-white/20 shadow-sm" style={{ backgroundColor: highlightColor, opacity: highlightOpacity ? highlightOpacity + 0.4 : 1 }} />
-            <span className="text-xs font-bold whitespace-nowrap">Destacar</span>
-          </button>
-          <div className="absolute left-1/2 bottom-1 w-3 h-3 bg-surface border-r border-b border-brand/50 transform rotate-45 -translate-x-1/2"></div>
-        </div>
-      )}
     </div>
   );
 };
@@ -366,81 +337,96 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
 
   // Global Selection Handler (For Highlight)
   useEffect(() => {
-    const handleMouseUp = (e: MouseEvent) => {
-      // If using text tool, ignore selection
+    const handleSelectionEnd = (e: Event) => {
+      // If using text tool, ignore selection logic
       if (activeTool === 'text') return;
 
-      // Critical: Prevent clearing selection if clicking UI elements (like the highlight button)
-      if ((e.target as HTMLElement).closest('button, input, select, .annotation-item')) return;
+      // Check if clicking inside UI elements (buttons, popups)
+      if (e.target instanceof Element && e.target.closest('button, input, select, .ui-panel')) return;
 
-      const sel = window.getSelection();
-      // If no selection or collapsed (just a click), clear state
-      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
-        setSelection(null);
-        return;
-      }
+      // Small timeout to let browser finish selection processing (especially on mobile)
+      setTimeout(() => {
+        const sel = window.getSelection();
+        // If no selection or collapsed (just a click), clear state
+        if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+          setSelection(null);
+          return;
+        }
 
-      // Check if text is actually selected
-      const text = sel.toString().trim();
-      if (text.length === 0) {
-        setSelection(null);
-        return;
-      }
+        const text = sel.toString().trim();
+        if (text.length === 0) {
+          setSelection(null);
+          return;
+        }
 
-      let node = sel.anchorNode;
-      if (node && node.nodeType === 3) node = node.parentNode; 
-      
-      const pageElement = (node as Element)?.closest('.pdf-page');
-      if (!pageElement) {
-        setSelection(null);
-        return;
-      }
+        let node = sel.anchorNode;
+        if (node && node.nodeType === 3) node = node.parentNode; 
+        
+        const pageElement = (node as Element)?.closest('.pdf-page');
+        if (!pageElement || !containerRef.current) {
+          setSelection(null);
+          return;
+        }
 
-      const pageNumAttr = pageElement.getAttribute('data-page-number');
-      if (!pageNumAttr) return;
-      const pageNum = parseInt(pageNumAttr);
+        const pageNumAttr = pageElement.getAttribute('data-page-number');
+        if (!pageNumAttr) return;
+        const pageNum = parseInt(pageNumAttr);
 
-      const range = sel.getRangeAt(0);
-      const rects = Array.from(range.getClientRects());
-      if (rects.length === 0) return;
+        const range = sel.getRangeAt(0);
+        const rects = Array.from(range.getClientRects());
+        if (rects.length === 0) return;
 
-      const containerRect = pageElement.getBoundingClientRect();
-      const firstRect = rects[0];
-      
-      // Calculate position relative to the PAGE element, not the viewport
-      const tooltipX = firstRect.left - containerRect.left + (firstRect.width / 2);
-      const tooltipY = firstRect.top - containerRect.top - 5; // Slightly above text
+        // Calculate Popup Position Relative to Scrolling Container
+        // This ensures the popup moves with the scroll and sits correctly above the text
+        const boundingRect = range.getBoundingClientRect(); // Viewport coords
+        const containerRect = containerRef.current.getBoundingClientRect();
+        
+        // Centered horizontally over selection, spaced slightly above
+        const popupX = boundingRect.left - containerRect.left + (boundingRect.width / 2) + containerRef.current.scrollLeft;
+        const popupY = boundingRect.top - containerRect.top + containerRef.current.scrollTop - 10;
 
-      setSelection({
-        page: pageNum,
-        x: tooltipX,
-        y: tooltipY,
-        text: sel.toString(),
-        rects: rects as DOMRect[]
-      });
+        // Calculate rects relative to the PAGE element for saving data
+        // These coords are what we store in DB to redraw accurately later
+        const pageRect = pageElement.getBoundingClientRect();
+        const relativeRects = rects.map(r => ({
+          x: r.left - pageRect.left,
+          y: r.top - pageRect.top,
+          width: r.width,
+          height: r.height
+        }));
+
+        setSelection({
+          page: pageNum,
+          text: text,
+          popupX,
+          popupY,
+          relativeRects
+        });
+      }, 50);
     };
 
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => document.removeEventListener('mouseup', handleMouseUp);
+    document.addEventListener('mouseup', handleSelectionEnd);
+    document.addEventListener('touchend', handleSelectionEnd);
+    document.addEventListener('keyup', handleSelectionEnd);
+    
+    return () => {
+      document.removeEventListener('mouseup', handleSelectionEnd);
+      document.removeEventListener('touchend', handleSelectionEnd);
+      document.removeEventListener('keyup', handleSelectionEnd);
+    };
   }, [activeTool]);
 
 
   const createHighlight = async () => {
     if (!selection) return;
 
-    const pageElement = document.querySelector(`.pdf-page[data-page-number="${selection.page}"]`);
-    const canvas = pageElement?.querySelector('canvas');
-    if (!canvas) return;
-
-    const canvasRect = canvas.getBoundingClientRect();
-    
-    // Convert viewport clientRects to canvas-relative coordinates
-    const newAnns: Annotation[] = selection.rects.map(rect => {
+    // Use stored relative rects which are safe against scrolling/resizing
+    const newAnns: Annotation[] = selection.relativeRects.map(rect => {
       return {
         page: selection.page,
         bbox: [
-          rect.left - canvasRect.left, 
-          rect.top - canvasRect.top, 
+          rect.x, 
+          rect.y, 
           rect.width, 
           rect.height
         ],
@@ -757,7 +743,7 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
 
         {/* Settings Panel (Absolute Overlay) */}
         {showSettings && (
-          <div className="absolute top-4 right-4 z-40 bg-surface border border-border p-4 rounded-xl shadow-2xl w-72 space-y-5 animate-in slide-in-from-top-2 max-h-[80vh] overflow-y-auto">
+          <div className="ui-panel absolute top-4 right-4 z-40 bg-surface border border-border p-4 rounded-xl shadow-2xl w-72 space-y-5 animate-in slide-in-from-top-2 max-h-[80vh] overflow-y-auto">
              <div className="flex justify-between items-center pb-2 border-b border-border">
               <h3 className="font-semibold text-text">Configurações</h3>
               <button onClick={() => setShowSettings(false)} className="text-text-sec hover:text-text"><X size={16}/></button>
@@ -810,15 +796,29 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
                 onPageClick={createTextNote}
                 onDeleteAnnotation={(id) => {
                   setAnnotations(prev => prev.filter(a => a.id !== id));
-                  // Note: Real deletion sync to DB would go here
                 }}
-                selection={selection?.page === pageNum ? selection : null}
-                onHighlight={createHighlight}
-                highlightColor={highlightColor}
-                highlightOpacity={highlightOpacity}
               />
             </div>
           ))}
+
+          {/* Highlight Popover (Global for Viewer) */}
+          {selection && (
+            <div 
+              className="absolute z-50 transform -translate-x-1/2 -translate-y-full pb-2 animate-in fade-in zoom-in duration-150 origin-bottom"
+              style={{ left: selection.popupX, top: selection.popupY }}
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              <button
+                onClick={createHighlight}
+                className="bg-zinc-900 text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-2 hover:scale-105 transition-transform ring-1 ring-white/20"
+              >
+                <Highlighter size={16} className="text-yellow-400" />
+                <span className="text-sm font-medium">Destacar</span>
+              </button>
+              {/* Arrow */}
+              <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-zinc-900 absolute left-1/2 -translate-x-1/2 bottom-[2px]"></div>
+            </div>
+          )}
         </div>
       </div>
     </div>
