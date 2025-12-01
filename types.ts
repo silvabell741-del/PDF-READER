@@ -5,12 +5,13 @@ export interface DriveFile {
   name: string;
   mimeType: string;
   thumbnailLink?: string;
+  parents?: string[]; // Pasta onde o arquivo está
 }
 
 export interface Annotation {
   id?: string;
   page: number;
-  bbox: [number, number, number, number]; // x, y, width, height
+  bbox: [number, number, number, number]; // x, y, width, height relative to canvas at specific scale
   text?: string;
   type: 'highlight' | 'note';
   author?: string;

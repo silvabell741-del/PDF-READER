@@ -9,7 +9,7 @@ import { ThemeSwitcher } from './components/ThemeSwitcher';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { AppState, DriveFile } from './types';
-import { ShieldCheck, Upload, LogIn, RefreshCw, AlertCircle, XCircle, Copy } from 'lucide-react';
+import { ShieldCheck, Upload, LogIn, RefreshCw, AlertCircle, XCircle, Copy, Menu } from 'lucide-react';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -24,6 +24,7 @@ export default function App() {
   
   // Navigation State
   const [currentView, setCurrentView] = useState<'dashboard' | 'browser' | 'viewer'>('dashboard');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // File State
   const [selectedFile, setSelectedFile] = useState<DriveFile | null>(null);
@@ -92,6 +93,7 @@ export default function App() {
     setLocalFile(null);
     setSelectedFile(null);
     setCurrentView('dashboard');
+    setIsMobileMenuOpen(false);
   };
 
   // Called when Drive API returns 401 (Unauthorized)
@@ -104,6 +106,7 @@ export default function App() {
     setSelectedFile(file);
     addRecentFile(file); // Track history
     setCurrentView('viewer');
+    setIsMobileMenuOpen(false);
   };
 
   const handleLocalUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -118,8 +121,14 @@ export default function App() {
       setLocalFile({ blob: file, meta });
       addRecentFile(meta);
       setCurrentView('viewer');
+      setIsMobileMenuOpen(false);
     }
   };
+
+  const handleChangeView = (view: 'dashboard' | 'browser') => {
+    setCurrentView(view);
+    setIsMobileMenuOpen(false);
+  }
 
   if (loadingAuth) {
     return <div className="h-screen w-full flex items-center justify-center bg-bg text-text">Carregando...</div>;
@@ -149,6 +158,7 @@ export default function App() {
           accessToken={accessToken}
           fileId={selectedFile.id}
           fileName={selectedFile.name}
+          fileParents={selectedFile.parents}
           uid={user.uid}
           onBack={() => {
             setSelectedFile(null);
@@ -163,45 +173,67 @@ export default function App() {
       <div className="flex h-screen w-full bg-bg overflow-hidden transition-colors duration-300">
         <Sidebar 
           currentView={currentView as 'dashboard'|'browser'} 
-          onChangeView={(view) => setCurrentView(view)}
+          onChangeView={handleChangeView}
           user={user}
           onLogout={handleLogout}
+          isOpen={isMobileMenuOpen}
+          onClose={() => setIsMobileMenuOpen(false)}
         />
         
         <main className="flex-1 relative overflow-hidden flex flex-col">
+          {/* Mobile Header Placeholder for spacing if needed, though implemented inside components */}
+          
           {/* Guest User trying to access Drive Browser */}
           {!user && currentView === 'browser' && (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-text animate-in fade-in zoom-in duration-300">
-               <div className="w-16 h-16 bg-surface border border-border rounded-2xl flex items-center justify-center mb-6">
-                  <ShieldCheck size={32} className="text-text-sec" />
+            <div className="flex-1 flex flex-col p-6 text-text animate-in fade-in zoom-in duration-300">
+               {/* Mobile Header for Guest Browser */}
+               <div className="md:hidden mb-6">
+                 <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 -ml-2 text-text-sec hover:text-text">
+                   <Menu size={24} />
+                 </button>
                </div>
-               <h2 className="text-2xl font-bold mb-2">Login Necessário</h2>
-               <p className="text-text-sec mb-6 max-w-sm">Para acessar seus arquivos do Google Drive, você precisa fazer login com segurança.</p>
-               <button 
-                  onClick={handleLogin}
-                  className="flex items-center gap-2 py-3 px-6 bg-brand text-bg rounded-full hover:brightness-110 transition-colors font-medium shadow-lg shadow-brand/20 btn-primary"
-                >
-                  <LogIn size={18} />
-                  Entrar com Google
-                </button>
+
+               <div className="flex-1 flex flex-col items-center justify-center text-center">
+                  <div className="w-16 h-16 bg-surface border border-border rounded-2xl flex items-center justify-center mb-6">
+                      <ShieldCheck size={32} className="text-text-sec" />
+                  </div>
+                  <h2 className="text-2xl font-bold mb-2">Login Necessário</h2>
+                  <p className="text-text-sec mb-6 max-w-sm">Para acessar seus arquivos do Google Drive, você precisa fazer login com segurança.</p>
+                  <button 
+                      onClick={handleLogin}
+                      className="flex items-center gap-2 py-3 px-6 bg-brand text-bg rounded-full hover:brightness-110 transition-colors font-medium shadow-lg shadow-brand/20 btn-primary"
+                    >
+                      <LogIn size={18} />
+                      Entrar com Google
+                    </button>
+               </div>
             </div>
           )}
 
           {/* Logged in User but Token Expired/Missing for Drive Browser */}
           {user && currentView === 'browser' && !accessToken && (
-             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-text animate-in fade-in zoom-in duration-300">
-                <div className="w-16 h-16 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl flex items-center justify-center mb-6 text-yellow-500">
-                  <AlertCircle size={32} />
-                </div>
-                <h2 className="text-2xl font-bold mb-2">Sessão do Drive Expirou</h2>
-                <p className="text-text-sec mb-6 max-w-sm">Sua conexão de segurança com o Google Drive precisa ser renovada para listar os arquivos.</p>
-                <button 
-                  onClick={handleLogin}
-                  className="flex items-center gap-2 py-3 px-6 bg-brand text-bg rounded-full hover:brightness-110 transition-colors font-medium shadow-lg shadow-brand/20 btn-primary"
-                >
-                  <RefreshCw size={18} />
-                  Reconectar Drive
-                </button>
+             <div className="flex-1 flex flex-col p-6 text-text animate-in fade-in zoom-in duration-300">
+                 {/* Mobile Header for Auth Error */}
+                 <div className="md:hidden mb-6">
+                   <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 -ml-2 text-text-sec hover:text-text">
+                     <Menu size={24} />
+                   </button>
+                 </div>
+
+                 <div className="flex-1 flex flex-col items-center justify-center text-center">
+                    <div className="w-16 h-16 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl flex items-center justify-center mb-6 text-yellow-500">
+                      <AlertCircle size={32} />
+                    </div>
+                    <h2 className="text-2xl font-bold mb-2">Sessão do Drive Expirou</h2>
+                    <p className="text-text-sec mb-6 max-w-sm">Sua conexão de segurança com o Google Drive precisa ser renovada para listar os arquivos.</p>
+                    <button 
+                      onClick={handleLogin}
+                      className="flex items-center gap-2 py-3 px-6 bg-brand text-bg rounded-full hover:brightness-110 transition-colors font-medium shadow-lg shadow-brand/20 btn-primary"
+                    >
+                      <RefreshCw size={18} />
+                      Reconectar Drive
+                    </button>
+                 </div>
              </div>
           )}
 
@@ -211,7 +243,8 @@ export default function App() {
               userName={user?.displayName}
               onOpenFile={handleOpenFile}
               onUploadLocal={handleLocalUpload}
-              onChangeView={(v) => setCurrentView(v)}
+              onChangeView={(v) => handleChangeView(v)}
+              onToggleMenu={() => setIsMobileMenuOpen(true)}
             />
           )}
 
@@ -221,6 +254,7 @@ export default function App() {
               onSelectFile={handleOpenFile}
               onLogout={handleLogout}
               onAuthError={handleAuthError}
+              onToggleMenu={() => setIsMobileMenuOpen(true)}
             />
           )}
         </main>

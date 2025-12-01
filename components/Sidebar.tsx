@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, FolderOpen, LogOut, User as UserIcon } from 'lucide-react';
+import { Home, FolderOpen, LogOut, User as UserIcon, X } from 'lucide-react';
 import { User } from 'firebase/auth';
 
 interface SidebarProps {
@@ -7,75 +7,100 @@ interface SidebarProps {
   onChangeView: (view: 'dashboard' | 'browser') => void;
   user: User | null;
   onLogout: () => void;
+  isOpen: boolean;
+  onClose: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, user, onLogout }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, user, onLogout, isOpen, onClose }) => {
   return (
-    <div className="w-20 md:w-64 flex flex-col h-full bg-sidebar border-r border-border transition-all duration-300">
-      {/* App Logo Area */}
-      <div className="h-16 flex items-center px-4 md:px-6 border-b border-border">
-        <div className="w-10 h-10 bg-brand rounded-xl flex items-center justify-center shadow-lg shadow-brand/20 shrink-0">
-          <FolderOpen className="text-bg font-bold" size={20} />
-        </div>
-        <span className="ml-3 font-bold text-xl text-text hidden md:block tracking-tight sidebar-text">Annotator</span>
-      </div>
+    <>
+      {/* Mobile Backdrop */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden animate-in fade-in duration-200"
+          onClick={onClose}
+        />
+      )}
 
-      {/* Navigation */}
-      <nav className="flex-1 py-6 px-2 md:px-4 space-y-2">
-        <button
-          onClick={() => onChangeView('dashboard')}
-          className={`w-full flex items-center gap-4 px-3 py-3 rounded-full transition-all duration-200 group sidebar-text ${
-            currentView === 'dashboard' 
-              ? 'bg-brand/10 text-brand' 
-              : 'text-text-sec hover:bg-white/5 hover:text-text'
-          }`}
-        >
-          <Home size={24} className={currentView === 'dashboard' ? "fill-brand/20" : ""} />
-          <span className="hidden md:block font-medium">Início</span>
-        </button>
-
-        <button
-          onClick={() => onChangeView('browser')}
-          className={`w-full flex items-center gap-4 px-3 py-3 rounded-full transition-all duration-200 group sidebar-text ${
-            currentView === 'browser' 
-              ? 'bg-brand/10 text-brand' 
-              : 'text-text-sec hover:bg-white/5 hover:text-text'
-          }`}
-        >
-          <FolderOpen size={24} className={currentView === 'browser' ? "fill-brand/20" : ""} />
-          <span className="hidden md:block font-medium">Meus Arquivos</span>
-        </button>
-      </nav>
-
-      {/* User Profile */}
-      <div className="p-4 border-t border-border">
-        {user ? (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-3 overflow-hidden">
-              {user.photoURL ? (
-                <img src={user.photoURL} alt="User" className="w-8 h-8 rounded-full border border-border" />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-surface flex items-center justify-center border border-border">
-                  <UserIcon size={16} className="text-text-sec" />
-                </div>
-              )}
-              <div className="hidden md:flex flex-col min-w-0">
-                <span className="text-sm font-medium text-text truncate sidebar-text">{user.displayName}</span>
-                <span className="text-xs text-text-sec truncate sidebar-text">{user.email}</span>
+      {/* Sidebar Container */}
+      <div className={`
+        fixed inset-y-0 left-0 z-50 w-72 bg-sidebar border-r border-border transition-transform duration-300 shadow-2xl md:shadow-none
+        md:relative md:translate-x-0 md:w-64
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="flex flex-col h-full">
+          
+          {/* App Logo Area */}
+          <div className="h-16 flex items-center justify-between px-6 border-b border-border">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-brand rounded-xl flex items-center justify-center shadow-lg shadow-brand/20 shrink-0">
+                <FolderOpen className="text-bg font-bold" size={20} />
               </div>
+              <span className="font-bold text-xl text-text tracking-tight sidebar-text">Annotator</span>
             </div>
-            <button 
-              onClick={onLogout}
-              className="flex items-center gap-2 text-red-400 hover:text-red-300 text-sm mt-2 md:pl-1 transition-colors sidebar-text"
-            >
-              <LogOut size={16} />
-              <span className="hidden md:inline">Sair</span>
+            <button onClick={onClose} className="md:hidden p-1 text-text-sec hover:text-text">
+              <X size={24} />
             </button>
           </div>
-        ) : (
-          <div className="text-center text-xs text-text-sec hidden md:block sidebar-text">Modo Visitante</div>
-        )}
+
+          {/* Navigation */}
+          <nav className="flex-1 py-6 px-4 space-y-2">
+            <button
+              onClick={() => onChangeView('dashboard')}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 group sidebar-text ${
+                currentView === 'dashboard' 
+                  ? 'bg-brand/10 text-brand font-medium' 
+                  : 'text-text-sec hover:bg-white/5 hover:text-text'
+              }`}
+            >
+              <Home size={22} className={currentView === 'dashboard' ? "fill-brand/20" : ""} />
+              <span className="text-base">Início</span>
+            </button>
+
+            <button
+              onClick={() => onChangeView('browser')}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 group sidebar-text ${
+                currentView === 'browser' 
+                  ? 'bg-brand/10 text-brand font-medium' 
+                  : 'text-text-sec hover:bg-white/5 hover:text-text'
+              }`}
+            >
+              <FolderOpen size={22} className={currentView === 'browser' ? "fill-brand/20" : ""} />
+              <span className="text-base">Meus Arquivos</span>
+            </button>
+          </nav>
+
+          {/* User Profile */}
+          <div className="p-4 border-t border-border mt-auto">
+            {user ? (
+              <div className="flex flex-col gap-3 bg-surface/50 rounded-xl p-3">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt="User" className="w-10 h-10 rounded-full border border-border" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-surface flex items-center justify-center border border-border">
+                      <UserIcon size={18} className="text-text-sec" />
+                    </div>
+                  )}
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-medium text-text truncate sidebar-text">{user.displayName}</span>
+                    <span className="text-xs text-text-sec truncate sidebar-text">{user.email}</span>
+                  </div>
+                </div>
+                <button 
+                  onClick={onLogout}
+                  className="w-full flex items-center justify-center gap-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 text-sm py-2 rounded-lg transition-all sidebar-text"
+                >
+                  <LogOut size={16} />
+                  <span>Sair</span>
+                </button>
+              </div>
+            ) : (
+              <div className="text-center text-xs text-text-sec p-2 sidebar-text">Modo Visitante</div>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 };

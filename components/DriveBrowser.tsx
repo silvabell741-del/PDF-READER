@@ -1,16 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { listPdfFiles } from '../services/driveService';
 import { DriveFile } from '../types';
-import { FileText, Loader2, Search, LayoutGrid, List as ListIcon, AlertTriangle, RefreshCw } from 'lucide-react';
+import { FileText, Loader2, Search, LayoutGrid, List as ListIcon, AlertTriangle, RefreshCw, Menu } from 'lucide-react';
 
 interface Props {
   accessToken: string;
   onSelectFile: (file: DriveFile) => void;
   onLogout: () => void;
   onAuthError: () => void; // Callback para quando o token expirar
+  onToggleMenu: () => void;
 }
 
-export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAuthError }) => {
+export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAuthError, onToggleMenu }) => {
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [filteredFiles, setFilteredFiles] = useState<DriveFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,11 +71,16 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
   }
 
   return (
-    <div className="flex flex-col h-full bg-bg text-text p-6 md:p-10 overflow-hidden">
+    <div className="flex flex-col h-full bg-bg text-text p-4 md:p-10 overflow-hidden">
       
       {/* Header & Tools */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-        <h2 className="text-3xl font-normal tracking-tight">Meus Arquivos</h2>
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 md:mb-8 gap-4">
+        <div className="flex items-center gap-3">
+          <button onClick={onToggleMenu} className="md:hidden p-2 -ml-2 text-text-sec hover:text-text rounded-full hover:bg-surface transition">
+            <Menu size={24} />
+          </button>
+          <h2 className="text-2xl md:text-3xl font-normal tracking-tight">Meus Arquivos</h2>
+        </div>
         
         <div className="flex items-center gap-3 w-full md:w-auto">
           {/* Search Bar */}
@@ -117,7 +123,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
       {!loading && !error && (
         <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
           {viewMode === 'grid' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 pb-20 md:pb-10">
               {filteredFiles.map(file => (
                 <button
                   key={file.id}
@@ -142,7 +148,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
               ))}
             </div>
           ) : (
-            <div className="flex flex-col gap-2 pb-10">
+            <div className="flex flex-col gap-2 pb-20 md:pb-10">
               {filteredFiles.map(file => (
                 <button
                   key={file.id}

@@ -2,7 +2,7 @@ import { DriveFile } from "../types";
 
 export async function listPdfFiles(accessToken: string): Promise<DriveFile[]> {
   const query = "mimeType='application/pdf' and trashed=false";
-  const fields = "files(id, name, mimeType, thumbnailLink)";
+  const fields = "files(id, name, mimeType, thumbnailLink, parents)";
   
   const response = await fetch(
     `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=${encodeURIComponent(fields)}&pageSize=20`,
@@ -48,4 +48,36 @@ export async function downloadDriveFile(accessToken: string, driveFileId: string
     }
   }
   return res.blob();
+}
+
+export async function uploadFileToDrive(
+  accessToken: string, 
+  file: Blob, 
+  name: string, 
+  parents: string[] = []
+): Promise<any> {
+  const metadata = {
+    name: name,
+    mimeType: 'application/pdf',
+    parents: parents.length > 0 ? parents : undefined
+  };
+
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append('file', file);
+
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    },
+    body: form
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || "Falha ao fazer upload");
+  }
+
+  return res.json();
 }

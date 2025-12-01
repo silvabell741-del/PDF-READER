@@ -3,6 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- PWA Setup -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#09090b">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/337/337946.png">
+    
+    <!-- PWA & Social Meta Tags (Required for PWABuilder Score) -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://pdf-reader-8ev.pages.dev/">
+    <meta property="og:title" content="Anotador de PDF Drive">
+    <meta property="og:description" content="Um PWA serverless para visualizar PDFs do Google Drive, fazer anotações e sincronizar com Firestore.">
+    <meta property="og:image" content="https://cdn-icons-png.flaticon.com/512/337/337946.png">
+    
     <title>Anotador de PDF Drive</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -23,7 +38,7 @@
       }
     </script>
     <!-- PDF.js Worker style fix for some environments -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/web/pdf_viewer.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/web/pdf_viewer.css">
     <!-- Google Fonts for PDF Compatibility (Tinos=Times, Arimo=Arial) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -179,32 +194,28 @@
     --border-color: #38bdf8;
   }
 
-  /* PDF.js Text Layer Styles */
+  /* --- PDF.js Custom Text Layer Overrides --- */
+  /* We rely on pdf_viewer.css for positioning, but we need to ensure visibility */
   .textLayer {
-    position: absolute;
-    left: 0;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    overflow: hidden;
-    opacity: 0.2;
-    line-height: 1.0;
-    pointer-events: none;
+    opacity: 1 !important; /* Ensure the layer itself (and selection box) is fully visible */
+    mix-blend-mode: multiply;
   }
 
   .textLayer > span {
-    color: transparent;
-    position: absolute;
-    white-space: pre;
+    color: transparent; /* Hide the text itself */
     cursor: text;
-    transform-origin: 0% 0%;
-    pointer-events: all;
   }
   
+  /* High contrast selection to make it obvious */
   ::selection {
-    background: var(--brand);
-    color: var(--bg-main);
-    opacity: 0.3;
+    background: rgba(255, 255, 0, 0.4); /* Bright yellow background */
+    color: transparent;
+  }
+  
+  /* Fallback for webkit */
+  ::-moz-selection {
+    background: rgba(255, 255, 0, 0.4);
+    color: transparent;
   }
 
   /* --- PDF.js FONT MAPPINGS --- */
@@ -287,6 +298,7 @@
     "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/",
     "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
     "pdfjs-dist": "https://aistudiocdn.com/pdfjs-dist@^5.4.449",
+    "pdf-lib": "https://aistudiocdn.com/pdf-lib@^1.17.1",
     "vite": "https://aistudiocdn.com/vite@^7.2.6",
     "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
     "idb": "https://aistudiocdn.com/idb@^8.0.3"
@@ -297,5 +309,18 @@
   <body class="bg-bg text-text overflow-hidden transition-colors duration-300">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
+    
+    <!-- PWA Service Worker Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').then(registration => {
+            console.log('SW registered: ', registration);
+          }).catch(registrationError => {
+            console.log('SW registration failed: ', registrationError);
+          });
+        });
+      }
+    </script>
   </body>
 </html>

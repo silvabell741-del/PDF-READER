@@ -1,17 +1,19 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { GlobalWorkerOptions, getDocument, PDFDocumentProxy } from 'pdfjs-dist';
-import { Annotation } from '../types';
+import { PDFDocument, rgb } from 'pdf-lib';
+import { Annotation, DriveFile } from '../types';
 import { saveAnnotation, loadAnnotations } from '../services/storageService';
-import { downloadDriveFile } from '../services/driveService';
-import { ArrowLeft, Highlighter, Loader2, Settings, X, Type, List, MousePointer2 } from 'lucide-react';
+import { downloadDriveFile, uploadFileToDrive } from '../services/driveService';
+import { ArrowLeft, Highlighter, Loader2, Settings, X, Type, List, MousePointer2, Save, ScanLine, AlertCircle } from 'lucide-react';
 
-// Explicitly set worker to specific version to match package.json (4.0.379)
-GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs`;
+// Explicitly set worker to specific version to match package.json (5.4.449)
+GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.worker.min.mjs`;
 
 interface Props {
   accessToken?: string | null;
   fileId: string;
   fileName: string;
+  fileParents?: string[];
   uid: string;
   onBack: () => void;
   fileBlob?: Blob;
@@ -51,6 +53,7 @@ const PdfPage: React.FC<PdfPageProps> = ({
   const textLayerRef = useRef<HTMLDivElement>(null);
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const [rendered, setRendered] = useState(false);
+  const [hasText, setHasText] = useState(true);
 
   useEffect(() => {
     let active = true;
@@ -76,10 +79,16 @@ const PdfPage: React.FC<PdfPageProps> = ({
           
           // 2. Setup Text Layer
           const textContent = await page.getTextContent();
+          
+          if (active) {
+             setHasText(textContent.items.length > 0);
+          }
+
           const textLayerDiv = textLayerRef.current;
           textLayerDiv.innerHTML = '';
           textLayerDiv.style.width = `${viewport.width}px`;
           textLayerDiv.style.height = `${viewport.height}px`;
+          // PDF.js v5+ requires CSS custom property for scaling
           textLayerDiv.style.setProperty('--scale-factor', `${scale}`);
 
           try {
@@ -128,6 +137,14 @@ const PdfPage: React.FC<PdfPageProps> = ({
       style={{ width: 'fit-content', height: 'fit-content' }}
       onClick={handleContainerClick}
     >
+      {/* 0. No Text Warning (Scanned PDF) */}
+      {!hasText && rendered && (
+         <div className="absolute -top-6 left-0 flex items-center gap-1 text-xs text-text-sec opacity-70">
+            <ScanLine size={12} />
+            <span>Imagem (sem texto selecionável)</span>
+         </div>
+      )}
+
       {/* 1. PDF Canvas with Color Filter */}
       <canvas 
         ref={canvasRef}
@@ -198,6 +215,7 @@ const PdfPage: React.FC<PdfPageProps> = ({
       </div>
 
       {/* 3. Text Selection Layer */}
+      {/* pointer-events-none added ONLY when using text tool to allow clicking through to canvas */}
       <div 
         ref={textLayerRef} 
         className={`textLayer ${activeTool === 'text' ? 'pointer-events-none' : ''}`}
@@ -209,14 +227,16 @@ const PdfPage: React.FC<PdfPageProps> = ({
 
 // --- Main Component ---
 
-export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, uid, onBack, fileBlob }) => {
+export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, fileParents, uid, onBack, fileBlob }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
+  const [originalBlob, setOriginalBlob] = useState<Blob | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false); // State for saving to Drive
   const [scale, setScale] = useState(1.3);
   
   // Selection & Tools State
@@ -247,6 +267,8 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, uid,
         } else {
           throw new Error("No file source provided");
         }
+
+        if (mounted) setOriginalBlob(blob);
 
         const arrayBuffer = await blob.arrayBuffer();
         const pdf = await getDocument({ data: arrayBuffer }).promise;
@@ -385,13 +407,106 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, uid,
     }
   };
 
+  // --- PDF Export Logic using pdf-lib ---
+  const handleSaveToDrive = async () => {
+    if (!accessToken || !originalBlob) {
+      alert("Erro: Arquivo ou sessão inválida.");
+      return;
+    }
+
+    const confirmSave = window.confirm(
+      "Isso criará uma cópia do arquivo no seu Google Drive com todas as anotações visíveis em outros leitores (Adobe, Drive Preview, etc). Deseja continuar?"
+    );
+
+    if (!confirmSave) return;
+
+    setIsExporting(true);
+
+    try {
+      // 1. Load original PDF into pdf-lib
+      const existingPdfBytes = await originalBlob.arrayBuffer();
+      const pdfDoc = await PDFDocument.load(existingPdfBytes);
+      const pages = pdfDoc.getPages();
+
+      // 2. Helper to convert Hex to RGB
+      const hexToRgb = (hex: string) => {
+        const bigint = parseInt(hex.replace('#', ''), 16);
+        const r = (bigint >> 16) & 255;
+        const g = (bigint >> 8) & 255;
+        const b = bigint & 255;
+        return rgb(r / 255, g / 255, b / 255);
+      };
+
+      // 3. Draw annotations
+      for (const ann of annotations) {
+        if (ann.page > pages.length) continue;
+        const page = pages[ann.page - 1]; // Pages are 0-indexed in pdf-lib
+        const { height } = page.getSize();
+        
+        // --- Coordinate Conversion ---
+        // App coordinates are pixels relative to rendered canvas at `scale` (default 1.3)
+        // PDF coordinates are points (72 DPI) usually at scale 1.0 (unless internally scaled)
+        // Y-axis in PDF starts at bottom, Y-axis in Browser starts at top.
+        
+        const rectX = ann.bbox[0] / scale;
+        const rectY = ann.bbox[1] / scale;
+        const rectW = ann.bbox[2] / scale;
+        const rectH = ann.bbox[3] / scale;
+
+        // Flip Y axis
+        // PDF Y = PageHeight - BrowserY - BrowserHeight
+        const pdfY = height - rectY - rectH;
+
+        if (ann.type === 'highlight') {
+          page.drawRectangle({
+            x: rectX,
+            y: pdfY,
+            width: rectW,
+            height: rectH,
+            color: hexToRgb(ann.color || '#facc15'),
+            opacity: ann.opacity ?? 0.4,
+          });
+        } else if (ann.type === 'note' && ann.text) {
+          // Drawing text notes is more complex (font embedding etc), 
+          // For now, we will draw a small sticky note icon or box with text
+          // This is a basic implementation for notes
+          const noteColor = hexToRgb(ann.color || '#fef9c3');
+          
+          // Draw a small "sticky note" box
+          page.drawRectangle({
+            x: rectX,
+            y: height - rectY - 20, // Adjust Y slightly
+            width: 150,
+            height: 50, // Fixed size for simplicity in this version
+            color: noteColor,
+          });
+        }
+      }
+
+      // 4. Save Modified PDF
+      const pdfBytes = await pdfDoc.save();
+      const newPdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+      // 5. Upload to Drive
+      const newFileName = `${fileName.replace('.pdf', '')} (Anotado).pdf`;
+      await uploadFileToDrive(accessToken, newPdfBlob, newFileName, fileParents);
+
+      alert(`Sucesso! Arquivo "${newFileName}" salvo no seu Google Drive.`);
+
+    } catch (err: any) {
+      console.error("Export error:", err);
+      alert("Falha ao salvar no Drive: " + err.message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+
   const scrollToAnnotation = (ann: Annotation) => {
     const pageEl = document.querySelector(`.pdf-page[data-page-number="${ann.page}"]`);
     if (pageEl) {
       pageEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       
-      // Flash effect logic could go here, but simple scroll is good for now
-      // If it has an ID (loaded from DB), we can try to find the specific element
       if (ann.id) {
         setTimeout(() => {
           const el = document.getElementById(`ann-${ann.id}`);
@@ -478,6 +593,19 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, uid,
         </div>
         
         <div className="flex items-center gap-2">
+          {/* Export Button */}
+          {accessToken && (
+            <button
+              onClick={handleSaveToDrive}
+              disabled={isExporting}
+              className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-brand/10 text-brand rounded-lg hover:bg-brand/20 transition disabled:opacity-50"
+              title="Salvar cópia no Drive com anotações fixas"
+            >
+              {isExporting ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+              <span className="text-sm font-medium">Salvar Cópia</span>
+            </button>
+          )}
+
           {isSaving && <span className="hidden md:flex text-xs text-brand items-center gap-1"><Loader2 size={12} className="animate-spin"/> Salvando</span>}
           
           <button 
@@ -528,6 +656,20 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, uid,
               </div>
             ))}
           </div>
+          
+          {/* Mobile Export Button (Sidebar Footer) */}
+          {accessToken && (
+            <div className="p-4 border-t border-border md:hidden">
+              <button
+                onClick={handleSaveToDrive}
+                disabled={isExporting}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-brand text-bg rounded-lg font-medium shadow-lg hover:brightness-110 disabled:opacity-50"
+              >
+                {isExporting ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                Salvar Cópia no Drive
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Settings Panel (Absolute Overlay) */}
