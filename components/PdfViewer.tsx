@@ -130,7 +130,8 @@ const PdfPage: React.FC<PdfPageProps> = ({
             viewport: viewport,
           };
 
-          await page.render(renderContext).promise;
+          // Cast to any to bypass strict TS check on RenderParameters which demands 'canvas' in some versions
+          await page.render(renderContext as any).promise;
           
           // 2. Setup Text Layer (Custom Implementation)
           const textContent = await page.getTextContent();
@@ -554,7 +555,8 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
 
       // 4. Save Modified PDF
       const pdfBytes = await pdfDoc.save();
-      const newPdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+      // Cast to any to avoid TS mismatch between Uint8Array and BlobPart in strict builds
+      const newPdfBlob = new Blob([pdfBytes as any], { type: 'application/pdf' });
 
       // 5. Upload to Drive
       const newFileName = `${fileName.replace('.pdf', '')} (Anotado).pdf`;
