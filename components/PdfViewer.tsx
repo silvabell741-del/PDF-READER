@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
+import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from 'pdfjs-dist';
 import { PDFDocument, rgb } from 'pdf-lib';
 import { Annotation, DriveFile } from '../types';
 import { saveAnnotation, loadAnnotations } from '../services/storageService';
@@ -7,7 +7,7 @@ import { downloadDriveFile, uploadFileToDrive } from '../services/driveService';
 import { ArrowLeft, Highlighter, Loader2, Settings, X, Type, List, MousePointer2, Save, ScanLine, AlertCircle } from 'lucide-react';
 
 // Explicitly set worker to specific version to match package.json (5.4.449)
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.worker.min.mjs`;
+GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/build/pdf.worker.min.mjs`;
 
 interface Props {
   accessToken?: string | null;
@@ -27,9 +27,57 @@ interface SelectionState {
   rects: DOMRect[];
 }
 
+// --- Custom Text Renderer ---
+// Renders invisible text over the canvas to enable native browser selection
+const renderCustomTextLayer = (textContent: any, container: HTMLElement, viewport: any) => {
+  container.innerHTML = '';
+  
+  textContent.items.forEach((item: any) => {
+    // Skip empty or purely whitespace items
+    if (!item.str || item.str.trim().length === 0) return;
+
+    // item.transform is [scaleX, skewX, skewY, scaleY, x, y]
+    const tx = item.transform;
+    
+    // Calculate font size based on the scaling factor (hypotenuse of scaleX/skewX)
+    const fontHeight = Math.sqrt(tx[3] * tx[3] + tx[2] * tx[2]);
+    const fontSize = fontHeight * viewport.scale;
+
+    // Convert PDF point (bottom-left origin) to Viewport point (top-left origin)
+    // transform[4] is X, transform[5] is Y in PDF space
+    const [x, y] = viewport.convertToViewportPoint(tx[4], tx[5]);
+
+    const span = document.createElement('span');
+    span.textContent = item.str;
+    
+    // Styles to position text correctly over the image
+    span.style.left = `${x}px`;
+    // Adjust Y: PDF coords are baseline, DOM coords are top-left. 
+    // Subtracting fontSize aligns the top roughly with the text.
+    span.style.top = `${y - fontSize}px`; 
+    span.style.fontSize = `${fontSize}px`;
+    span.style.fontFamily = 'sans-serif'; // Generic font is usually sufficient for selection
+    span.style.position = 'absolute';
+    span.style.color = 'transparent'; // Invisible text
+    span.style.whiteSpace = 'pre';
+    span.style.cursor = 'text';
+    span.style.transformOrigin = '0% 0%';
+    span.style.lineHeight = '1';
+    span.style.pointerEvents = 'all';
+
+    // Handle Rotation (if needed)
+    const angle = Math.atan2(tx[1], tx[0]);
+    if (angle !== 0) {
+      span.style.transform = `rotate(${angle}rad)`;
+    }
+
+    container.appendChild(span);
+  });
+};
+
 // --- Sub-Component: Individual Page Renderer ---
 interface PdfPageProps {
-  pdfDoc: pdfjsLib.PDFDocumentProxy;
+  pdfDoc: PDFDocumentProxy;
   pageNumber: number;
   scale: number;
   filterValues: string;
@@ -37,6 +85,11 @@ interface PdfPageProps {
   activeTool: 'cursor' | 'text';
   onPageClick: (page: number, x: number, y: number) => void;
   onDeleteAnnotation: (id: string) => void;
+  // New props for selection highlight
+  selection?: SelectionState | null;
+  onHighlight?: () => void;
+  highlightColor?: string;
+  highlightOpacity?: number;
 }
 
 const PdfPage: React.FC<PdfPageProps> = ({ 
@@ -47,7 +100,11 @@ const PdfPage: React.FC<PdfPageProps> = ({
   annotations,
   activeTool,
   onPageClick,
-  onDeleteAnnotation
+  onDeleteAnnotation,
+  selection,
+  onHighlight,
+  highlightColor,
+  highlightOpacity
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
@@ -75,9 +132,14 @@ const PdfPage: React.FC<PdfPageProps> = ({
           canvas.width = viewport.width;
           canvas.height = viewport.height;
           
-          await page.render({ canvasContext: ctx, viewport }).promise;
+          const renderContext = {
+            canvasContext: ctx,
+            viewport: viewport,
+          };
+
+          await page.render(renderContext).promise;
           
-          // 2. Setup Text Layer
+          // 2. Setup Text Layer (Custom Implementation)
           const textContent = await page.getTextContent();
           
           if (active) {
@@ -85,28 +147,14 @@ const PdfPage: React.FC<PdfPageProps> = ({
           }
 
           const textLayerDiv = textLayerRef.current;
-          textLayerDiv.innerHTML = '';
           textLayerDiv.style.width = `${viewport.width}px`;
           textLayerDiv.style.height = `${viewport.height}px`;
-          // PDF.js v5+ requires CSS custom property for scaling
-          textLayerDiv.style.setProperty('--scale-factor', `${scale}`);
 
-          try {
-            if (pdfjsLib.renderTextLayer) {
-               await pdfjsLib.renderTextLayer({
-                textContentSource: textContent,
-                container: textLayerDiv,
-                viewport: viewport,
-                textDivs: []
-              }).promise;
-            } else {
-              console.error("renderTextLayer not found in pdfjs-dist export");
-            }
-          } catch (e) {
-            console.warn("Text layer rendering failed", e);
+          // Use our custom renderer instead of library one to avoid export errors
+          if (active) {
+            renderCustomTextLayer(textContent, textLayerDiv, viewport);
+            setRendered(true);
           }
-
-          if (active) setRendered(true);
         }
       } catch (err) {
         console.error(`Error rendering page ${pageNumber}`, err);
@@ -222,6 +270,28 @@ const PdfPage: React.FC<PdfPageProps> = ({
         className={`textLayer ${activeTool === 'text' ? 'pointer-events-none' : ''}`}
         style={{ zIndex: 10 }}
       />
+
+      {/* 4. Highlight Popover (Rendered inside the page for correct relative positioning) */}
+      {selection && (
+        <div 
+          className="absolute z-50 transform -translate-x-1/2 -translate-y-full pb-3 animate-in zoom-in slide-in-from-bottom-2 duration-200"
+          style={{ left: selection.x, top: selection.y }}
+          onMouseDown={(e) => e.preventDefault()} // Prevent focus loss and selection clearing
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onHighlight?.();
+            }}
+            className="flex items-center gap-2 bg-surface text-text px-3 py-1.5 rounded-full shadow-xl hover:scale-105 transition border border-brand/50 ring-1 ring-black/20"
+          >
+            <Highlighter size={14} className="text-brand" />
+            <div className="w-3 h-3 rounded-full border border-white/20 shadow-sm" style={{ backgroundColor: highlightColor, opacity: highlightOpacity ? highlightOpacity + 0.4 : 1 }} />
+            <span className="text-xs font-bold whitespace-nowrap">Destacar</span>
+          </button>
+          <div className="absolute left-1/2 bottom-1 w-3 h-3 bg-surface border-r border-b border-brand/50 transform rotate-45 -translate-x-1/2"></div>
+        </div>
+      )}
     </div>
   );
 };
@@ -231,7 +301,7 @@ const PdfPage: React.FC<PdfPageProps> = ({
 export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, fileParents, uid, onBack, fileBlob }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   
-  const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [originalBlob, setOriginalBlob] = useState<Blob | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -272,7 +342,7 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
         if (mounted) setOriginalBlob(blob);
 
         const arrayBuffer = await blob.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pdf = await getDocument({ data: arrayBuffer }).promise;
         
         if (mounted) {
           setPdfDoc(pdf);
@@ -300,8 +370,19 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
       // If using text tool, ignore selection
       if (activeTool === 'text') return;
 
+      // Critical: Prevent clearing selection if clicking UI elements (like the highlight button)
+      if ((e.target as HTMLElement).closest('button, input, select, .annotation-item')) return;
+
       const sel = window.getSelection();
+      // If no selection or collapsed (just a click), clear state
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+        setSelection(null);
+        return;
+      }
+
+      // Check if text is actually selected
+      const text = sel.toString().trim();
+      if (text.length === 0) {
         setSelection(null);
         return;
       }
@@ -326,8 +407,9 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
       const containerRect = pageElement.getBoundingClientRect();
       const firstRect = rects[0];
       
+      // Calculate position relative to the PAGE element, not the viewport
       const tooltipX = firstRect.left - containerRect.left + (firstRect.width / 2);
-      const tooltipY = firstRect.top - containerRect.top - 10;
+      const tooltipY = firstRect.top - containerRect.top - 5; // Slightly above text
 
       setSelection({
         page: pageNum,
@@ -352,6 +434,7 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
 
     const canvasRect = canvas.getBoundingClientRect();
     
+    // Convert viewport clientRects to canvas-relative coordinates
     const newAnns: Annotation[] = selection.rects.map(rect => {
       return {
         page: selection.page,
@@ -470,7 +553,6 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
         } else if (ann.type === 'note' && ann.text) {
           // Drawing text notes is more complex (font embedding etc), 
           // For now, we will draw a small sticky note icon or box with text
-          // This is a basic implementation for notes
           const noteColor = hexToRgb(ann.color || '#fef9c3');
           
           // Draw a small "sticky note" box
@@ -730,24 +812,11 @@ export const PdfViewer: React.FC<Props> = ({ accessToken, fileId, fileName, file
                   setAnnotations(prev => prev.filter(a => a.id !== id));
                   // Note: Real deletion sync to DB would go here
                 }}
+                selection={selection?.page === pageNum ? selection : null}
+                onHighlight={createHighlight}
+                highlightColor={highlightColor}
+                highlightOpacity={highlightOpacity}
               />
-              
-              {/* Highlight Popover */}
-              {selection && selection.page === pageNum && (
-                <div 
-                  className="absolute z-50 transform -translate-x-1/2 -translate-y-full"
-                  style={{ left: selection.x, top: selection.y }}
-                >
-                  <button
-                    onClick={createHighlight}
-                    className="flex items-center gap-2 bg-surface text-text px-3 py-2 rounded-lg shadow-xl hover:brightness-110 transition border border-brand animate-in zoom-in duration-200"
-                  >
-                    <div className="w-3 h-3 rounded-full border border-white/20" style={{ backgroundColor: highlightColor, opacity: highlightOpacity + 0.4 }} />
-                    <span className="text-sm font-medium">Destacar</span>
-                  </button>
-                  <div className="w-3 h-3 bg-surface border-r border-b border-brand transform rotate-45 absolute left-1/2 -bottom-1.5 -translate-x-1/2"></div>
-                </div>
-              )}
             </div>
           ))}
         </div>
